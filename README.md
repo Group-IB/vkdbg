@@ -1,4 +1,4 @@
-# VKDBG
+# Vitrual Kernel Debug Util (VKDBG)
 
 ## General-purpose
 
@@ -18,7 +18,7 @@ Before we start, let's do some preparations.
 1. Find some QCOW2 image of the machine you want or create it by yourself and then, find some debug sources in rpm format (deb is coming soon). Your better choice is fedora / CentOS images, both of them have good debug sources and kernel images.
 
 
-2. Then, when you've done the first step, let's create your first VKDBG bundle.
+2. Then, when you've done the first step, let's create your first VKDBG bundle, command below creates a virtual machine environment bundle for fast migration.
 
 ```./vkgdb bundle create -p <path_to_qcow> -r <path_to_dir_with_rpms> [-n bundle_name] ```
 
