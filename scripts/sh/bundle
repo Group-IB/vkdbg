@@ -1,0 +1,182 @@
+#!/bin/bash
+
+#    This file is part of the vkdbg distribution (https://github.com/Group-IB/vkdbg).
+#    Copyright (C) 2021 Timur Chernykh
+#
+#    This program is free software: you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+_vkdbg_bundle_cmd_help() {
+    log_info "Operations with bundle"
+    log_continue "Available commands:"
+    log_continue "    create - create bundle"
+    log_continue "    help   - show this message"
+}
+
+_vkdbg_bundle_create_help() {
+    log_message "Create bundle"
+    log_continue "Available flags"
+    log_continue "    --image | -i - qcow2 image for qemu"
+    log_continue "    --rpms  | -r - directory contains rpm packages with kernel debug info"
+    log_continue "    --apks  | -a - directory contains apk packages with kernel debug info"
+    log_continue "    --name  | -n - set bundle name"
+    log_continue "    --meta  | -m - metadata field (in key=value format)"
+    log_continue "Possible metadata fields:"
+    log_continue "    key: creds, value: \$USER:\$PASSWORD from machine root user"
+}
+
+_vkdbg_bundle_create() {
+    local qcow_image
+    local rpms_dir
+    local apks_dir
+    local bundle_name
+    local packages_dir
+
+    local meta_creds
+
+    while (("$#")); do
+        case "$1" in
+            --image | -i)
+                shift && qcow_image=$1
+                ;;
+            --rpms | -r)
+                shift && rpms_dir=$1
+                ;;
+            --apks | -a)
+                shift && apks_dir=$1
+                ;;
+            --name | -n)
+                shift && bundle_name=$1
+                ;;
+            --meta | -m)
+                shift
+                local IFS='='
+                read -ra vals <<<"$1"
+                val=${vals[1]}
+                if [[ "$1" == creds=* ]]; then
+                    meta_creds=$val
+                fi
+                ;;
+            --help | -h)
+                _vkdbg_bundle_create_help
+                exit 0
+                ;;
+            --*)
+                log_error "Unknown key $1"
+                exit 1
+                ;;
+        esac
+        shift
+    done
+
+    if [[ -z $rpms_dir ]] && [[ -z $apks_dir ]]; then
+        log_error "Specify al least one directory with debug packages"
+        exit 1
+    fi
+
+    local package_type
+
+    if [[ -n $rpms_dir ]] && [[ -n $apks_dir ]]; then
+        log_warning "Using shuffled package types may cause of unresolvable conflicts!"
+        log_continue "1) rpm"
+        log_continue "2) apk"
+        i=$(log_and_read "Please, choose one (1,2): ")
+        if [[ $i == "1" ]]; then
+            package_type="rpm"
+        elif [[ $i == "2" ]]; then
+            package_type="apk"
+        else
+            log_error "Aborting"
+            exit 1
+        fi
+    else
+        if [[ -n $rpms_dir ]]; then
+            packages_dir=$rpms_dir
+            package_type="rpm"
+        elif [[ -n $apks_dir ]]; then
+            packages_dir=$apks_dir
+            package_type="apk"
+        fi
+    fi
+
+    assert_empty "$qcow_image" "Please, specify image"
+
+    if [[ -z $bundle_name ]]; then
+        bundle_name=$(basename "$qcow_image")
+    fi
+
+    log_info "Checking up $packages_dir"
+    excess_files=$(find "$packages_dir" -type f | grep -v "$package_type")
+
+    log_info "Checking up $qcow_image"
+    file_approve=$(file "$qcow_image" | grep QCOW2)
+
+    if [[ -z $file_approve ]]; then
+        log_error "$qcow_image is not qcow2 image"
+        exit 1
+    fi
+
+    if [[ -n $excess_files ]]; then
+        log_error "$packages_dir contains excess file(s) or dir(s):"
+        for file in $excess_files; do
+            log_continue "$file"
+        done
+        exit 1
+    fi
+
+    if [[ ! -d ".$_VKDBG_NAME/$bundle_name" ]]; then
+        mkdir -p ".$_VKDBG_NAME/$bundle_name"
+    fi
+
+    log_info "Preparing..."
+    bundled_packages_dir=".$_VKDBG_NAME/$bundle_name/debug-$package_type"
+    mkdir -p "$bundled_packages_dir"
+    mkdir -p ".$_VKDBG_NAME/$bundle_name/meta"
+    cp "$qcow_image" ".$_VKDBG_NAME/$bundle_name/image.qcow2"
+    for package in "$packages_dir/"*."$package_type"; do
+        cp "$package" "$bundled_packages_dir"
+    done
+
+    if [[ -n $meta_creds ]]; then
+        echo "$meta_creds" >>".$_VKDBG_NAME/$bundle_name/meta/creds"
+    fi
+
+    (
+        log_info "Creating bundle..."
+        cd ".$_VKDBG_NAME/$bundle_name/" || exit 1
+        tar -czvf "$bundle_name.tar.gz" .
+    )
+
+    mv ".$_VKDBG_NAME/$bundle_name/$bundle_name.tar.gz" .
+    rm -rf ".$_VKDBG_NAME/"
+}
+
+vkdbg_bundle_cmd() {
+    while (("$#")); do
+        case "$1" in
+            create)
+                shift && _vkdbg_bundle_create "$@"
+                exit 0
+                ;;
+            --help | -h)
+                _vkdbg_bundle_cmd_help
+                exit 0
+                ;;
+            *)
+                log_error "Unknown command $1"
+                exit 1
+                ;;
+        esac
+        shift
+    done
+}

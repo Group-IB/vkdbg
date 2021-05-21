@@ -1,0 +1,147 @@
+#!/bin/bash
+
+#    This file is part of the vkdbg distribution (https://github.com/Group-IB/vkdbg).
+#    Copyright (C) 2021 Timur Chernykh
+#
+#    This program is free software: you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+_VKDBG_ENV_ROOT=$HOME/.local/share/gib-kvdb
+_VKDBG_ENV_CURRENT=$HOME/.local/share/gib-kvdb/current
+_VKDBG_ENV_DATA_DIR_NAME='meta'
+_VKDBG_NAME='vkdbg'
+
+check_vkdbg_env() {
+    local error=0
+    if [[ ! -d "$_VKDBG_ENV_ROOT" ]]; then
+        error=1
+    fi
+    return $error
+}
+
+create_vkdbg_env() {
+    mkdir -p "$_VKDBG_ENV_ROOT"
+    mkdir -p "$_VKDBG_ENV_CURRENT"
+}
+
+create_vkdbg_vm_env() {
+    target_vm=$1
+    mkdir -p "$_VKDBG_ENV_ROOT"
+    mkdir -p "$_VKDBG_ENV_CURRENT"
+}
+
+create_vkdbg_vm_directory() {
+    target_vm=$1
+    target_vm_dir=$(get_vkdbg_vm_directory "$target_vm")
+    target_vm_data_dir=$(get_vkdbg_vm_data_directory "$target_vm")
+    target_vm_root_dir=$(get_vkdbg_vm_root_directory "$target_vm")
+    target_vm_mount_dir=$(get_vkdbg_vm_mount_directory "$target_vm")
+    target_vm_versions_dir=$(get_vkdbg_vm_versions_directory "$target_vm")
+
+    if [[ ! -d $target_vm_dir ]]; then
+        mkdir -p "$target_vm_dir"
+    fi
+    if [[ ! -d $target_vm_data_dir ]]; then
+        mkdir -p "$target_vm_data_dir"
+    fi
+    if [[ ! -d $target_vm_root_dir ]]; then
+        mkdir -p "$target_vm_root_dir"
+    fi
+    if [[ ! -d $target_vm_mount_dir ]]; then
+        mkdir -p "$target_vm_mount_dir"
+    fi
+    if [[ ! -d $target_vm_versions_dir ]]; then
+        mkdir -p "$target_vm_versions_dir"
+    fi
+
+    echo "$_VKDBG_ENV_ROOT/$target_vm/"
+}
+
+get_vkdbg_vm_directory() {
+    target_vm=$1
+    echo "$_VKDBG_ENV_ROOT/$target_vm"
+}
+
+get_vkdbg_vm_mount_directory() {
+    target_vm=$1
+    echo "$_VKDBG_ENV_ROOT/$target_vm/mnt"
+}
+
+get_vkdbg_vm_versions_directory() {
+    target_vm=$1
+    echo "$_VKDBG_ENV_ROOT/$target_vm/versions"
+}
+
+get_vkdbg_vm_root_directory() {
+    target_vm=$1
+    echo "$_VKDBG_ENV_ROOT/$target_vm/root"
+}
+
+get_vkdbg_vm_data_directory() {
+    target_vm=$1
+    echo "$_VKDBG_ENV_ROOT/$target_vm/meta"
+}
+
+check_vkdbg_vm_env() {
+    target_vm=$1
+    target_vm_dir=$(get_vkdbg_vm_directory "$target_vm")
+    target_vm_data_dir=$(get_vkdbg_vm_data_directory "$target_vm")
+    target_vm_root_dir=$(get_vkdbg_vm_root_directory "$target_vm")
+    target_vm_mount_dir=$(get_vkdbg_vm_mount_directory "$target_vm")
+    target_vm_versions_dir=$(get_vkdbg_vm_versions_directory "$target_vm")
+
+    if [[ ! -f "$target_vm_dir/image.qcow2" ]]; then
+        log_error "Couldn't find $target_vm_dir/image.qcow2"
+        exit 1
+    fi
+
+    if [[ ! -d "$target_vm_data_dir" ]]; then
+        log_error "Couldn't find $target_vm_data_dir"
+        exit 1
+    fi
+
+    if [[ ! -d "$target_vm_root_dir" ]]; then
+        log_error "Couldn't find $target_vm_root_dir"
+        exit 1
+    fi
+
+    if [[ ! -d "$target_vm_mount_dir" ]]; then
+        log_error "Couldn't find $target_vm_mount_dir"
+        exit 1
+    fi
+
+    if [[ ! -d "$target_vm_versions_dir" ]]; then
+        log_error "Couldn't find $target_vm_versions_dir"
+        exit 1
+    fi
+}
+
+get_vkdbg_current_vm() {
+    if [ ! -L "$_VKDBG_ENV_ROOT/current" ] || [ ! -e "$_VKDBG_ENV_ROOT/current" ]; then
+        log_error "Current machine is not set"
+        return 1
+    fi
+    echo $(cat "$_VKDBG_ENV_ROOT/.current")
+    return 0
+}
+
+set_vkdbg_current_vm() {
+    local target_vm=$1
+    target_vm_dir=$(get_vkdbg_vm_directory "$target_vm")
+    log_info "Setting up $target_vm as current"
+    if [ -L "$_VKDBG_ENV_ROOT/current" ] && [ -e "$_VKDBG_ENV_ROOT/current" ]; then
+        unlink "$_VKDBG_ENV_ROOT/current"
+    fi
+    ln -s "$target_vm_dir" "$_VKDBG_ENV_ROOT/current"
+    echo "$target_vm" > "$_VKDBG_ENV_ROOT/.current"
+}

@@ -1,0 +1,946 @@
+#!/bin/bash
+
+#    This file is part of the vkdbg distribution (https://github.com/Group-IB/vkdbg).
+#    Copyright (C) 2021 Timur Chernykh
+#
+#    This program is free software: you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+_vkdbg_vm_pull_remote() {
+    local scp_cred=$1
+    local scp_from=$2
+    local scp_to=$3
+    local ssh_key=$4
+
+    local scp_cmd="scp"
+    if [[ -n "$ssh_key" ]]; then
+        scp_cmd="$scp_cmd -i $ssh_key"
+    fi
+    scp_cmd="$scp_cmd $scp_cred:$scp_from $scp_to/bundle.tar.gz"
+
+    $scp_cmd
+    local error=$?
+    if [[ $error != 0 ]]; then
+        log_error "scp error: $error"
+        exit 1
+    fi
+}
+
+_vkdbg_vm_init_help() {
+    log_info "Init VKDBG environment for virtual machine"
+    log_continue "$_VKDBG_NAME vm init <machine_name> [flags]"
+    log_continue "Available flags"
+    log_continue "    --verbose | -v - use verbose output"
+    log_continue "    --remote  | -r - init from remote bundle using ssh"
+    log_continue "    --ssh-key | -i - (for remote only) use ssh key"
+    log_continue "    --host    | -a - (for remote only) set remote addr"
+    log_continue "    --user    | -u - (for remote only) set remote user"
+    log_continue "    --path    | -p - set path to bundle"
+    log_continue "    --cached  | -c - use already unpacked bundle (for troubleshooting)"
+    log_continue "    --help    | -h - show this message"
+    exit 0
+}
+
+_vkdbg_vm_init() {
+    local verbose=false
+    local remote=false
+    local use_cached=false
+
+    local server_user
+    local server_addr
+    local server_key
+    local path
+    local target_machine
+
+    while (("$#")); do
+        case "$1" in
+            --verbose | -v)
+                verbose=true
+                ;;
+            --remote | -r)
+                remote=true
+                ;;
+            --ssh-key | -i)
+                shift && server_key=$1
+                ;;
+            --host | -a)
+                shift && server_addr=$1
+                ;;
+            --path | -p)
+                shift && path=$1
+                ;;
+            --user | -u)
+                shift && server_user=$1
+                ;;
+            --cached | -c)
+                shift && use_cached=true
+                ;;
+            --help | -h)
+                shift && use_cached=true
+                ;;
+            --*)
+                _vkdbg_vm_init_help
+                exit 0
+                ;;
+            *)
+                target_machine=$1
+                ;;
+        esac
+        shift
+    done
+
+    assert_empty "$target_machine" "Please, specify machine name"
+
+    target_machine_dir=$(create_vkdbg_vm_directory "$target_machine")
+    assert_empty "$target_machine_dir" "Couldn't get directory machine directory"
+
+    if [[ $verbose == true ]]; then
+        log_info "Creating with name $target_machine"
+        log_info "Bundle path $path"
+    fi
+
+    (
+        cd "$target_machine_dir" || exit 1
+
+        if [[ $remote == true ]] && [[ $use_cached == false ]]; then
+            assert_empty "$server_addr" "Please specify remote host (--host | -a)"
+            assert_empty "$server_user" "Please specify remote user (--user | -u)"
+            _vkdbg_vm_pull_remote "$server_user@$server_addr" "$path" "$target_machine_dir" "$server_key"
+        else
+            assert_empty "$path" "Please, specify path to bundle"
+            cp "$path" "$target_machine_dir/bundle.tar.gz"
+        fi
+
+        if [[ $use_cached == false ]]; then
+            log_info "Unpacking bundle..."
+            tar -xf "$target_machine_dir/bundle.tar.gz"
+        else
+            log_info "Using already unpacked bundle"
+        fi
+
+        local error
+
+        check_and_prepare_vkdbg_sources "$target_machine"
+        error=$1
+
+        if [[ $error -eq 1 ]]; then
+            log_warning "Aborting"
+            exit 1
+        fi
+
+        check_vkdbg_vm_env "$target_machine"
+
+        log_info "If your VM doesn't not exists yet, create it using image from bundle or using"
+        log_continue "or already unpacked image at $target_machine_dir/image.qcow2 and name it $target_machine"
+        log_continue "After (or, if machine already existed) add xmd scheme below to it's configuration"
+        log_continue "via virsh or virt-manager (read more there: https://access.redhat.com/blogs/766093/posts/2690881)"
+        log_continue "<domain type='kvm' xmlns:qemu='http://libvirt.org/schemas/domain/qemu/1.0'>"
+        log_continue "    <qemu:commandline>"
+        log_continue "        <qemu:arg value='-s'/>"
+        log_continue "    </qemu:commandline>"
+        log_continue "in the machine xml configuration (virsh)"
+    )
+}
+
+_vkdbg_vm_deinit() {
+    local target_machine=$1
+    local verbose=$2
+
+    target_machine_dir="$(get_vkdbg_vm_directory "$target_machine")"
+    rm -rf "$target_machine_dir"
+}
+
+_vkdbg_check_machine() {
+    local target_machine=$1
+    local verbose=$2
+
+    target_machine_dir="$(get_vkdbg_vm_directory "$target_machine")"
+
+    if [[ $verbose == true ]]; then
+        log_info "Checking $target_machine"
+    fi
+
+    if [[ ! -d $target_machine_dir ]]; then
+        log_error "Machine doesn't inited"
+        return 1
+    fi
+
+    local elevated
+    local virsh_machine
+    elevated=$(check_privileges)
+    virsh_machine=$($elevated virsh list --name --all | grep "$target_machine")
+
+    if [[ $verbose == true ]]; then
+        log_info "Found matching in virsh:"
+        log_continue "$virsh_machine"
+    fi
+
+    if [[ -z $virsh_machine ]]; then
+        log_error "Virtual machine with name $target_machine doesn't exist"
+        return 1
+    fi
+
+    return 0
+}
+
+_vkdbg_vm_start_help() {
+    log_info "Start virtual machine"
+    log_continue "$_VKDBG_NAME vm start <machine_name> [flags]"
+    log_continue "Available flags"
+    log_continue "    --verbose | -v - use verbose output"
+    log_continue "    --help    | -h - show this message"
+    exit 0
+}
+
+_vkdbg_vm_start() {
+    local verbose=false
+    local target_machine
+
+    while (("$#")); do
+        case "$1" in
+            --verbose | -v)
+                verbose=true
+                ;;
+            --help | -h)
+                _vkdbg_vm_start_help
+                ;;
+            --*)
+                log_error "Unknown key $1"
+                exit 1
+                ;;
+            *)
+                target_machine=$1
+                ;;
+        esac
+        shift
+    done
+
+    assert_empty "$target_machine" "Please, specify machine name"
+
+    target_machine_dir="$(get_vkdbg_vm_directory "$target_machine")"
+    log_info "Starting machine: $target_machine"
+
+    if [[ $verbose == true ]]; then
+        log_info "Machine dir: $target_machine_dir"
+        log_continue "Machine bundle: $target_machine_dir/bundle.tar.gz"
+        log_continue "Machine image: $target_machine_dir/image.qcow2"
+    fi
+
+    local error
+    _vkdbg_check_machine "$target_machine" $verbose
+    error=$1
+
+    if [[ $error -eq 1 ]]; then
+        log_warning "Aborting"
+        exit 1
+    fi
+
+    elevated=$(check_privileges)
+    $elevated virsh start "$target_machine"
+    error=$?
+
+    return $error
+}
+
+_vkdbg_vm_stop_help() {
+    log_info "Stop virtual machine"
+    log_continue "$_VKDBG_NAME vm stop <machine_name> [flags]"
+    log_continue "Available flags"
+    log_continue "    --verbose | -v - use verbose output"
+    log_continue "    --help    | -h - show this message"
+    exit 0
+}
+
+_vkdbg_vm_stop() {
+    local verbose=false
+    local target_machine
+
+    while (("$#")); do
+        case "$1" in
+            --verbose | -v)
+                verbose=true
+                ;;
+            --help | -h)
+                _vkdbg_vm_stop_help
+                exit 0
+                ;;
+            --*)
+                log_error "Unknown key $1"
+                exit 1
+                ;;
+            *)
+                target_machine=$1
+                ;;
+        esac
+        shift
+    done
+
+    assert_empty "$target_machine" "Please, specify machine name"
+
+    target_machine_dir="$(get_vkdbg_vm_directory "$target_machine")"
+    log_info "Starting machine: $target_machine"
+
+    if [[ $verbose == true ]]; then
+        log_info "Machine dir: $target_machine_dir"
+        log_continue "Machine bundle: $target_machine_dir/bundle.tar.gz"
+        log_continue "Machine image: $target_machine_dir/image.qcow2"
+    fi
+
+    local error
+    _vkdbg_check_machine "$target_machine" $verbose
+    error=$1
+
+    if [[ $error -eq 1 ]]; then
+        log_warning "Aborting"
+        exit 1
+    fi
+
+    elevated=$(check_privileges)
+    $elevated virsh destroy "$target_machine"
+    error=$?
+
+    return $error
+}
+
+_vkdbg_vm_refresh_help() {
+    log_info "Update metainformation about machine"
+    log_continue "$_VKDBG_NAME vm refresh [machine_name (default: current)] [flags]"
+    log_continue "Available flags"
+    log_continue "    --verbose | -v - use verbose output"
+    log_continue "    --addr    | -a - address of virtual machine"
+    log_continue "    --user    | -u - username for SSH"
+    log_continue "    --help    | -h - show this message"
+    exit 0
+}
+
+_vkdbg_vm_refresh() {
+    local verbose=false
+    local target_machine
+    local target_machine_dir
+    local user="root"
+    local addr
+
+    while (("$#")); do
+        case "$1" in
+            --verbose | -v)
+                verbose=true
+                ;;
+            --addr | -a)
+                shift && addr=$1
+                ;;
+            --user | -u)
+                shift && user=$1
+                ;;
+            --help | -h)
+                _vkdbg_vm_refresh_help
+                exit 0
+                ;;
+            --*)
+                log_error "Unknown key $1"
+                exit 1
+                ;;
+            *)
+                target_machine=$1
+                ;;
+        esac
+        shift
+    done
+
+    assert_empty "$addr" "Please, specify machine address"
+
+    local error
+    if [[ -z "$target_machine" ]]; then
+        target_machine=$(get_vkdbg_current_vm)
+        target_machine_dir=$(get_vkdbg_vm_directory "$target_machine")
+    else
+        target_machine_dir=$(get_vkdbg_vm_directory "$target_machine")
+    fi
+    error=$?
+
+    if [[ $error -eq 1 ]]; then
+        echo "Couldn't get machine dir"
+        exit 1
+    fi
+
+    local target_machine_data_dir="$target_machine_dir/$_VKDBG_ENV_DATA_DIR_NAME"
+
+    if [[ $verbose == true ]]; then
+        log_info "Machine dir: $target_machine_dir"
+        log_continue "Machine meta: $target_machine_data_dir"
+        log_continue "Machine image: $target_machine_dir/image.qcow2"
+        log_continue "Machine ssh cred: $user@$addr"
+    fi
+
+    log_info "Updating kallsyms"
+    ssh "$user@$addr" cat /proc/kallsyms >"$target_machine_data_dir/kallsyms"
+    error=$1
+
+    if [[ $error -eq 1 ]]; then
+        log_error "SSH error: $error"
+        exit 1
+    fi
+
+    log_info "Done"
+}
+
+_vkdbg_vm_set_current_help() {
+    log_info "Set current debug machine"
+    log_continue "$_VKDBG_NAME vm set-current <machine_name> [flags]"
+    log_continue "Available flags"
+    log_continue "    --verbose | -v - use verbose output"
+    log_continue "    --help    | -h - show this message"
+    exit 0
+}
+
+_vkdbg_vm_set_current() {
+    local verbose=false
+    local target_machine
+
+    while (("$#")); do
+        case "$1" in
+            --verbose | -v)
+                verbose=true
+                ;;
+            --help | -h)
+                _vkdbg_vm_set_current_help
+                exit 0
+                ;;
+            --*)
+                log_error "Unknown key $1"
+                exit 1
+                ;;
+            *)
+                target_machine=$1
+                ;;
+        esac
+        shift
+    done
+
+    assert_empty "$target_machine" "Please, specify machine name"
+
+    local error
+    _vkdbg_check_machine "$target_machine" $verbose
+    error=$?
+    if [[ $error -eq 1 ]]; then
+        log_warning "Aborting"
+        exit 1
+    fi
+
+    set_vkdbg_current_vm "$target_machine"
+}
+
+_vkdbg_vm_info_help() {
+    log_info "Show information"
+    log_continue "$_VKDBG_NAME vm info [flags]"
+    log_continue "Available flags"
+    log_continue "    --list    | -l - list inited VMs"
+    log_continue "    --current | -c - info about current vm"
+    log_continue "    --all     | -a - show all possible information"
+    log_continue "    --help    | -h - show this message"
+    exit 0
+}
+
+_vkdbg_vm_info() {
+    local list=false
+    local current=false
+    local error
+
+    while (("$#")); do
+        case "$1" in
+            --current | -c)
+                current=true
+                ;;
+            --list | -l)
+                list=true
+                ;;
+            --all | -a)
+                current=true
+                list=true
+                ;;
+            --help | -h)
+                _vkdbg_vm_info_help
+                exit 0
+                ;;
+            --*)
+                log_error "Unknown key $1"
+                exit 1
+                ;;
+        esac
+        shift
+    done
+
+    check_vkdbg_env
+    error=$?
+
+    if [[ $error -eq 1 ]]; then
+        log_error "Environment isn't inited"
+        exit 1
+    fi
+
+    if [[ $list == true ]]; then
+        log_info "Available machines:"
+        for vm_dir in "$_VKDBG_ENV_ROOT"/*; do
+            local vm_name
+            vm_name=$(basename "$vm_dir")
+            if [[ "current" != "$vm_name" ]]; then
+                log_continue "* $vm_name"
+            fi
+        done
+    fi
+
+    if [[ $current == true ]]; then
+        local current_vm
+        local current_vm_versions_dir
+        current_vm=$(get_vkdbg_current_vm)
+        current_vm_versions_dir=$(get_vkdbg_vm_versions_directory "$current_vm")
+
+        log_info "Current VM: $current_vm"
+        log_continue "Kernel versions:"
+        i=0
+        while read -r line; do
+            ((i++))
+            log_continue "* $line"
+        done < <(ls "$current_vm_versions_dir")
+    fi
+}
+
+_vkdbg_vm_add_kernel_module_object() {
+    debug_module=$1
+
+    if [[ -d "$target_machine_data_dir/module-objects/" ]]; then
+        mkdir -p "$target_machine_data_dir/module-objects/" >/dev/null
+    fi
+
+    if [[ -n "$debug_module" ]]; then
+        cp "$debug_module" "$target_machine_data_dir/module-objects/$(basename "$debug_module")" || exit 1
+    fi
+}
+
+_vkdbg_vm_debug_help() {
+    log_info "Start debugging of virtual machine"
+    log_continue "$_VKDBG_NAME vm debug [machine (default: current)] [flags]"
+    log_continue "Available flags"
+    log_continue "    --with-module  | -m - add debug module object (it will be available on gdb)"
+    log_continue "    --help         | -h - show this message"
+    exit 0
+}
+
+_vkdbg_vm_debug() {
+    local target_machine
+    local target_machine_dir
+    local target_machine_versions_dir
+    local debug_module
+
+    while (("$#")); do
+        case "$1" in
+            --with-module | -m)
+                shift && _vkdbg_vm_add_kernel_module_object $1
+                ;;
+            --help | -h)
+                _vkdbg_vm_debug_help
+                exit 0
+                ;;
+            --*)
+                log_error "Unknown key $1"
+                exit 1
+                ;;
+            *)
+                target_machine=$1
+                ;;
+        esac
+        shift
+    done
+
+    local error
+    if [[ -z "$target_machine" ]]; then
+        target_machine=$(get_vkdbg_current_vm)
+        target_machine_dir=$(get_vkdbg_vm_directory "$target_machine")
+        log_info "Machine wasn't explicitly specified, chosen current ($target_machine)"
+    else
+        target_machine_dir=$(get_vkdbg_vm_directory "$target_machine")
+    fi
+    error=$?
+
+    if [[ $error -eq 1 ]]; then
+        log_error "Aborting..."
+        exit 1
+    fi
+
+    check_vkdbg_vm_env "$target_machine"
+
+    if [[ $error -eq 1 ]]; then
+        log_error "Aborting..."
+        exit 1
+    fi
+
+    target_machine_versions_dir=$(get_vkdbg_vm_versions_directory "$target_machine")
+    target_machine_data_dir=$(get_vkdbg_vm_data_directory "$target_machine")
+
+    local i=0
+    local version=""
+
+    while read -r line; do
+        versions[$i]="$line"
+        ((i++))
+    done < <(ls "$target_machine_versions_dir")
+
+    log_info "Getting kernel versions for $target_machine"
+    for ((i = 1; i <= ${#versions[@]}; i++)); do
+        log_continue "[$i] ${versions[$i - 1]}"
+    done
+
+    if [[ $i -eq 1 ]]; then
+        log_error "Couldn't find any kernel version for $target_machine"
+        exit 1
+    fi
+
+    i=$(log_and_read "Choose version (enter number): ")
+    version=${versions[i - 1]}
+
+    target_kernel="$target_machine_dir/kernel-$version"
+    target_kernel_sources="$target_machine_dir/src-$version"
+
+    log_info "Loading kernel $target_kernel"
+    log_info "Loading kernel sources $(readlink "$target_kernel_sources")"
+
+    if [[ -d "$target_machine_data_dir/module-objects/" ]]; then
+        export VKDBG_MODULE_OBJECTS_DIR="$target_machine_data_dir/module-objects/"
+    fi
+
+    export VKDBG_CURRENT_KALLSYMS="$target_machine_data_dir/kallsyms"
+    export VKDBG_CURRENT_KERNEL=$target_kernel
+    gdb --command "$_VKDBG_ROOT_DIR/scripts/py/gdb_kernel_utils.py" --dir "$target_kernel_sources" -q
+}
+
+_vkdbg_vm_mount_help() {
+    log_info "Mount virtual machine filesystem"
+    log_continue "$_VKDBG_NAME vm mount [machine (default: current)] [flags]"
+    log_continue "Available flags"
+    log_continue "    --type         | -t - type of mount"
+    log_continue "    --verbose      | -v - show verbose messages"
+    log_continue "    --addr         | -a - (for sshfs only) machine address"
+    log_continue "    --user         | -u - (for sshfs only) machine SSH user"
+    log_continue "    --help         | -h - show this message"
+    log_continue "Available mount types:"
+    log_continue "    sshfs"
+    exit 0
+}
+
+_vkdbg_vm_mount() {
+    local target_machine
+    local verbose=false
+    local target_machine_mount_dir
+    local mount_type="sshfs"
+    local user="root"
+    local addr
+
+    while (("$#")); do
+        case "$1" in
+            --type | -t)
+                shift && mount_type=$1
+                ;;
+            --verbose | -v)
+                verbose=true
+                ;;
+            --addr | -a)
+                shift && addr=$1
+                ;;
+            --user | -u)
+                shift && user=$1
+                ;;
+            --help | -h)
+                _vkdbg_vm_mount_help
+                exit 0
+                ;;
+            --*)
+                log_error "Unknown key $1"
+                exit 1
+                ;;
+            *)
+                target_machine=$1
+                ;;
+        esac
+        shift
+    done
+
+    assert_empty "$mount_type" "Please, specify mount type"
+
+    if [[ -z "$target_machine" ]]; then
+        target_machine=$(get_vkdbg_current_vm)
+        log_warning "Machine wasn't explicitly specified, chosen current ($target_machine)"
+    fi
+
+    local error
+    _vkdbg_check_machine "$target_machine" $verbose
+    error=$1
+
+    if [[ $error -eq 1 ]]; then
+        log_warning "Aborting"
+        exit 1
+    fi
+
+    target_machine_mount_dir=$(get_vkdbg_vm_mount_directory "$target_machine")
+    target_machine_data_dir=$(get_vkdbg_vm_data_directory "$target_machine")
+
+    if [[ $mount_type == "sshfs" ]]; then
+        local dep_err=false
+
+        check_vkdbg_additional_deps sshfs
+        dep_err=$(($? | $dep_err))
+
+        if [[ $dep_err -eq 1 ]]; then
+            log_error "Error mount fs. Not all dependencies satisfied"
+            return 1
+        fi
+
+        assert_empty "$addr" "Please, specify machine address"
+
+        if [[ -f "$target_machine_data_dir/mount" ]]; then
+            log_error "Already mounted via $(cat "$target_machine_data_dir/mount")"
+            exit 1
+        fi
+
+        log_info "Mounting $target_machine via sshfs"
+        sshfs "$user@$addr:/" "$target_machine_mount_dir"
+        local error=$?
+
+        if [ $error != 0 ]; then
+            log_error "Mounting error: code = $error"
+            rm "$target_machine_data_dir/mount" >/dev/null
+            exit 1
+        fi
+
+        echo "$mount_type" >"$target_machine_data_dir/mount"
+        log_info "$target_machine mounted at $target_machine_mount_dir"
+        exit 0
+
+    else
+
+        log_error "Unsupported mount type: $mount_type"
+        exit 1
+    fi
+}
+
+_vkdbg_vm_unmount_help() {
+    log_info "Unmount virtual machine filesystem"
+    log_continue "$_VKDBG_NAME vm unmount [machine (default: current)] [flags]"
+    log_continue "Available flags"
+    log_continue "    --help    | -h - show this message"
+    log_continue "    --verbose | -v - show verbose messages"
+    log_continue "    --force   | -f - ignore all errors"
+    log_continue "Available mount types:"
+    log_continue "    sshfs"
+    exit 0
+}
+
+_vkdbg_vm_unmount() {
+    local target_machine
+    local verbose=false
+    local target_machine_mount_dir
+    local force_unmount=false
+
+    while (("$#")); do
+        case "$1" in
+            --verbose | -v)
+                verbose=true
+                ;;
+            --force | -f)
+                force_unmount=true
+                ;;
+            --help | -h)
+                _vkdbg_vm_unmount_help
+                exit 0
+                ;;
+            --*)
+                log_error "Unknown key $1"
+                exit 1
+                ;;
+            *)
+                target_machine=$1
+                ;;
+        esac
+        shift
+    done
+
+    if [[ -z "$target_machine" ]]; then
+        target_machine=$(get_vkdbg_current_vm)
+        log_warning "Machine wasn't explicitly specified, chosen current ($target_machine)"
+    fi
+
+    local error
+    _vkdbg_check_machine "$target_machine" $verbose
+    error=$1
+
+    if [[ $error -eq 1 ]]; then
+        log_warning "Aborting"
+        exit 1
+    fi
+
+    target_machine_mount_dir=$(get_vkdbg_vm_mount_directory "$target_machine")
+    target_machine_data_dir=$(get_vkdbg_vm_data_directory "$target_machine")
+
+    if [[ ! -f "$target_machine_data_dir/mount" ]] && [[ ! $force_unmount != true ]]; then
+        log_error "$target_machine is not mounted"
+        exit 1
+    fi
+
+    mount_type=$(cat "$target_machine_data_dir/mount")
+    log_info "Unmounting $mount_type fs for $target_machine"
+
+    if [ "$mount_type" = 'sshfs' ]; then
+        umount "$target_machine_mount_dir"
+        error_code=$?
+        if [ $error_code != 0 ] && [[ ! $force_unmount != true ]]; then
+            log_error "Unmounting error: code = $error_code"
+            exit 1
+        fi
+
+        rm "$target_machine_data_dir/mount"
+        log_info "Unmounted"
+    fi
+
+}
+
+_vkdbg_vm_connect_help() {
+    log_info "Connect to virtual machine console"
+    log_continue "$_VKDBG_NAME vm connect [machine (default: current)] [flags]"
+    log_continue "Available flags"
+    log_continue "    --help    | -h - show this message"
+    log_continue "    --verbose | -v - show verbose messages"
+    log_continue "    --force   | -f - ignore all errors"
+    log_continue "Available mount types:"
+    log_continue "    sshfs"
+    exit 0
+}
+
+_vkdbg_vm_connect() {
+    local target_machine
+    local verbose=false
+
+    while (("$#")); do
+        case "$1" in
+            --verbose | -v)
+                verbose=true
+                ;;
+            --help | -h)
+                _vkdbg_vm_connect_help
+                exit 0
+                ;;
+            --*)
+                log_error "Unknown key $1"
+                exit 1
+                ;;
+            *)
+                target_machine=$1
+                ;;
+        esac
+        shift
+    done
+
+    if [[ -z "$target_machine" ]]; then
+        target_machine=$(get_vkdbg_current_vm)
+        log_warning "Machine wasn't explicitly specified, chosen current ($target_machine)"
+    fi
+
+    local error
+    _vkdbg_check_machine "$target_machine" $verbose
+    error=$1
+
+    if [[ $error -eq 1 ]]; then
+        log_warning "Aborting"
+        exit 1
+    fi
+
+    local elevated
+    elevated=$(check_privileges)
+
+    $elevated virsh console "$target_machine" --force
+}
+
+_vkdbg_vm_cmd_help() {
+    log_info "Control virtual machines"
+    log_continue "$_VKDBG_NAME vm <cmd> [flags]"
+    log_continue "Available commands"
+    log_continue "    init        - init debug env from existing bundle (see vm bundle --help)"
+    log_continue "    deinit      - remove env"
+    log_continue "    start       - start virtual machine"
+    log_continue "    stop        - stop virtual machine"
+    log_continue "    set-current - set current virtual machine"
+    log_continue "    refresh     - refresh virtual machine metadata"
+    log_continue "    debug       - start debugging VM"
+    log_continue "    info        - show info"
+    log_continue "    mount       - mount VM fs"
+    log_continue "    unmount     - unmount VM fs"
+    log_continue "    connect     - connect to VM console"
+    exit 0
+}
+
+vkdbg_vm_cmd() {
+    while (("$#")); do
+        case "$1" in
+            init)
+                shift && _vkdbg_vm_init "$@"
+                exit 0
+                ;;
+            deinit)
+                shift && _vkdbg_vm_init "$@"
+                exit 0
+                ;;
+            start)
+                shift && _vkdbg_vm_start "$@"
+                exit 0
+                ;;
+            stop)
+                shift && _vkdbg_vm_stop "$@"
+                exit 0
+                ;;
+            set-current)
+                shift && _vkdbg_vm_set_current "$@"
+                exit 0
+                ;;
+            refresh)
+                shift && _vkdbg_vm_refresh "$@"
+                exit 0
+                ;;
+            debug)
+                shift && _vkdbg_vm_debug "$@"
+                exit 0
+                ;;
+            mount)
+                shift && _vkdbg_vm_mount "$@"
+                exit 0
+                ;;
+            unmount)
+                shift && _vkdbg_vm_unmount "$@"
+                exit 0
+                ;;
+            connect)
+                shift && _vkdbg_vm_connect "$@"
+                exit 0
+                ;;
+            info)
+                shift && _vkdbg_vm_info "$@"
+                exit 0
+                ;;
+            --help | -h)
+                _vkdbg_vm_cmd_help
+                exit 0
+                ;;
+            *)
+                log_error "Unknown command $1"
+                exit 1
+                ;;
+        esac
+        shift
+    done
+}

@@ -1,0 +1,108 @@
+#!/bin/bash
+
+#    This file is part of the vkdbg distribution (https://github.com/Group-IB/vkdbg).
+#    Copyright (C) 2021 Timur Chernykh
+#
+#    This program is free software: you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+_VKDBG_DEBUG_RPM_DIR="debug-rpm"
+
+_link_kernels_data() {
+    mkdir -p versions
+    target_machine_dir=$1
+    log_info "Searching kernels and their sources..."
+
+    (
+        cd "$target_machine_dir" || exit 1
+
+        for vmlinux_path in $(find root -type f | grep vmlinux$); do
+            version=$(echo "$vmlinux_path" | xargs dirname | xargs basename -a)
+            kernel_link_name="kernel-$version"
+            log_info "Found kernel at $vmlinux_path, version: $version"
+
+            # create link to kernel symbols
+            if [ ! -x "$kernel_link_name" ]; then
+                log_info "Creating symlink to found kernel $vmlinux_path"
+                ln "$vmlinux_path" "$kernel_link_name"
+            fi
+
+            for src_dir in $(find . -type d | grep "$version/include$" | xargs dirname); do
+                src_link_name=src-$version
+                if [ ! -x "$src_link_name" ]; then
+                    log_info "Creating symlink to found kernel sources $src_dir"
+                    ln -s "$src_dir" "$src_link_name"
+                fi
+            done
+
+            touch "versions/$version"
+        done
+    )
+}
+
+_unpack_debug_rpm() {
+    local dep_err=false
+
+    check_vkdbg_additional_deps rpm2cpio
+    dep_err=$(($? | $dep_err))
+
+    check_vkdbg_additional_deps cpio
+    dep_err=$(($? | $dep_err))
+
+    if [[ $dep_err -eq 1 ]]; then
+        log_error "Error unpacking rpms. Not all dependencies satisfied"
+        return 1
+    fi
+
+    target_directory=$1
+    mkdir -p "$target_directory/root"
+    log_info "Copying rpms"
+    cp "$target_directory/$_VKDBG_DEBUG_RPM_DIR"/* "$target_directory/root"
+    (
+        cd "$target_directory/root" || exit 1
+        rpm2cpio_executable=$(which rpm2cpio)
+
+        log_info "Installing debug sources and packages"
+        for filename in "$target_machine_dir"/root/*.rpm; do
+            log_info "Processing $filename"
+            $rpm2cpio_executable "$filename" | cpio -idm
+        done
+
+        rm "$target_machine_dir"/root/*.rpm
+    )
+
+    return 0
+}
+
+check_and_prepare_vkdbg_sources() {
+    local target_machine=$1
+    local target_machine_dir
+    local error
+
+    target_machine_dir=$(get_vkdbg_vm_directory "$target_machine")
+
+    if [[ -d "$target_machine_dir/$_VKDBG_DEBUG_RPM_DIR" ]]; then
+        log_info "Found debug rpm directory"
+         _unpack_debug_rpm "$target_machine_dir"
+         error=$?
+    fi
+
+    if [[ $error != 0 ]]; then
+        log_error "Error occurred while unpacking, please"
+        log_continue "Unpack logs: $target_machine_dir/unpack.log"
+        return 1
+    fi
+
+    _link_kernels_data "$target_machine_dir"
+    return 0
+}

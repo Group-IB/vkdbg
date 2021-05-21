@@ -1,0 +1,97 @@
+#!/bin/bash
+
+#    This file is part of the vkdbg distribution (https://github.com/Group-IB/vkdbg).
+#    Copyright (C) 2021 Timur Chernykh
+#
+#    This program is free software: you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+source "$_VKDBG_ROOT_DIR/scripts/sh/log"
+
+_DEP_OPTIONAL=1
+_DEP_REQUIRED=2
+
+_check_dep() {
+    local dep=$1
+    local required=$2
+    local not_exists
+
+    type "$dep" >/dev/null 2>&1
+    not_exists=$?
+
+    if [ $not_exists -eq 1 ] && [[ $required -eq $_DEP_REQUIRED ]]; then
+        log_error "Couldn't find $dep"
+        return 1
+    elif [ $not_exists -eq 1 ] && [[ $required -eq $_DEP_OPTIONAL ]]; then
+        log_error "You should install $dep for this feature"
+        return 1
+    fi
+
+    return 0
+}
+
+assert_empty() {
+    local var=$1
+    local err_message=$2
+    if [[ -z "$var" ]]; then
+        log_error "$err_message"
+        exit 1
+    fi
+}
+
+check_privileges() {
+    if [ "$EUID" -ne 0 ]; then
+        echo "sudo"
+        return
+    fi
+}
+
+check_vkdbg_additional_deps() {
+    _check_dep "$1" $_DEP_OPTIONAL
+    return $?
+}
+
+check_all_vkdbg_deps() {
+    not_satisfied=false
+
+    _check_dep ssh $_DEP_REQUIRED
+    not_satisfied=$(($? | $not_satisfied))
+
+    _check_dep gdb $_DEP_REQUIRED
+    not_satisfied=$(($? | $not_satisfied))
+
+    _check_dep python $_DEP_REQUIRED
+    not_satisfied=$(($? | $not_satisfied))
+
+    _check_dep virsh $_DEP_REQUIRED
+    not_satisfied=$(($? | $not_satisfied))
+
+    _check_dep virt-manager $_DEP_REQUIRED
+    not_satisfied=$(($? | $not_satisfied))
+
+    _check_dep python3 $_DEP_REQUIRED
+    not_satisfied=$(($? | $not_satisfied))
+
+    _check_dep qemu-img $_DEP_REQUIRED
+    not_satisfied=$(($? | $not_satisfied))
+
+    _check_dep tar $_DEP_REQUIRED
+    not_satisfied=$(($? | $not_satisfied))
+
+    if [[ $not_satisfied -eq 1 ]]; then
+        log_error "Not all dependencies satisfied, please, install it firstly"
+        exit 1
+    else
+        log_info "All deps is ok"
+    fi
+}
