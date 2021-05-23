@@ -515,7 +515,14 @@ _vkdbg_vm_info() {
 }
 
 _vkdbg_vm_add_kernel_module_object() {
-    debug_module=$1
+    local target_machine=$1
+    local debug_module=$2
+
+    target_machine_data_dir=$(get_vkdbg_vm_data_directory "$target_machine")
+    
+    if [[ ! -d "$target_machine_data_dir/module-objects/" ]]; then
+        mkdir -p "$target_machine_data_dir/module-objects/"
+    fi
 
     if [[ -d "$target_machine_data_dir/module-objects/" ]]; then
         mkdir -p "$target_machine_data_dir/module-objects/" >/dev/null
@@ -541,10 +548,12 @@ _vkdbg_vm_debug() {
     local target_machine_versions_dir
     local debug_module
 
+    local load_modules=()
+
     while (("$#")); do
         case "$1" in
             --with-module | -m)
-                shift && _vkdbg_vm_add_kernel_module_object $1
+                shift && load_modules+=("$1")
                 ;;
             --help | -h)
                 _vkdbg_vm_debug_help
@@ -582,6 +591,10 @@ _vkdbg_vm_debug() {
         log_error "Aborting..."
         exit 1
     fi
+
+    for module in "${load_modules[@]}"; do
+        _vkdbg_vm_add_kernel_module_object "$target_machine" "$module"
+    done
 
     target_machine_versions_dir=$(get_vkdbg_vm_versions_directory "$target_machine")
     target_machine_data_dir=$(get_vkdbg_vm_data_directory "$target_machine")
