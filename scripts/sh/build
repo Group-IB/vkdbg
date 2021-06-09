@@ -7,6 +7,7 @@ _vkdbg_build_remote_help() {
     log_continue "    --file    | -f - Specify build file"
     log_continue "    --host    | -a - Set remote addr"
     log_continue "    --user    | -u - Set remote user"
+    log_continue "    --verbose | -v - Show verbose log"
     log_continue "    -- [args]      - Pass build args to script"
     exit 0
 }
@@ -19,11 +20,15 @@ _vkdbg_build_remote() {
     local user="root"
     local addr
     local remote_source_dir="/usr/local/src/"
+    local hide_log_posfix=" &>/dev/null"
 
     while (("$#")); do
         case "$1" in
             --file | -f)
                 shift && build_file=$1
+                ;;
+            --verbose | -v)
+                hide_log_posfix=""
                 ;;
             --)
                 shift && build_args="$*"
@@ -83,11 +88,16 @@ _vkdbg_build_remote() {
     remote_build_dir_name="$(basename "$local_source_root_dir")"
     build_file_name="$(basename "$build_file")"
 
-    ssh-copy-id "$user@$addr" >/dev/null
-    scp -r "$local_source_root_dir" "$user@$addr:$remote_source_dir"
+    log_info "Connecting..."
+    ssh-copy-id "$user@$addr" $hide_log_posfix
+    log_info "Pushing sources..."
+    scp -r "$local_source_root_dir" "$user@$addr:$remote_source_dir" $hide_log_posfix
     ssh "$user@$addr" "(cd $remote_source_dir/$remote_build_dir_name; source $build_file_name; vkdbg_build $build_args)"
-    mkdir -f remote_artifacts
-    scp -r "$user@$addr:$remote_source_dir/$remote_build_dir_name/$VKDBG_ARTIFACTS_DIR" remote_artifacts/
+    if [ ! -d remote_artifacts ]; then
+        mkdir remote_artifacts
+    fi
+    log_info "Pulling artifacts..."
+    scp -r "$user@$addr:$remote_source_dir/$remote_build_dir_name/$VKDBG_ARTIFACTS_DIR" remote_artifacts/ $hide_log_posfix
 }
 
 _vkdbg_build_cmd_help() {
