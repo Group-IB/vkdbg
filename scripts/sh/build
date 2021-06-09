@@ -8,6 +8,7 @@ _vkdbg_build_remote_help() {
     log_continue "    --host    | -a - Set remote addr"
     log_continue "    --user    | -u - Set remote user"
     log_continue "    --verbose | -v - Show verbose log"
+    log_continue "    --install | -i - Install sources to vm env"
     log_continue "    -- [args]      - Pass build args to script"
     exit 0
 }
@@ -21,6 +22,7 @@ _vkdbg_build_remote() {
     local addr
     local remote_source_dir="/usr/local/src/"
     local verbose=false
+    local install
 
     while (("$#")); do
         case "$1" in
@@ -29,6 +31,9 @@ _vkdbg_build_remote() {
                 ;;
             --verbose | -v)
                 verbose=true
+                ;;
+            --install | -i)
+                install=true
                 ;;
             --)
                 shift && build_args="$*"
@@ -85,7 +90,7 @@ _vkdbg_build_remote() {
     local remote_build_dir_name
     local build_file_name
 
-    local_source_root_dir="$(dirname "$build_file")"
+    local_source_root_dir="$(dirname "$(realpath "$build_file")")"
     remote_build_dir_name="$(basename "$local_source_root_dir")"
     build_file_name="$(basename "$build_file")"
 
@@ -115,12 +120,28 @@ _vkdbg_build_remote() {
     $build_cmd
     if [ ! -d remote_artifacts ]; then
         mkdir remote_artifacts
+    else
+        rm -rf remote_artifacts
+        mkdir remote_artifacts
     fi
     log_info "Pulling artifacts..."
     if $verbose; then
         $pull_artifacts_cmd
     else
         $pull_artifacts_cmd &>/dev/null
+    fi
+
+    if $install; then
+        local root_dir
+        root_dir=$(get_vkdbg_vm_root_directory "$target_machine")
+        log_info "Installing sources to environment..."
+        if [ ! -x "$root_dir/$remote_source_dir/" ]; then
+            mkdir -p "$root_dir/$remote_source_dir/"
+        fi
+        if [ -L "$root_dir/$remote_source_dir/$remote_build_dir_name" ]; then
+            unlink "$root_dir/$remote_source_dir/$remote_build_dir_name"
+        fi
+        ln -s "$local_source_root_dir" "$root_dir/$remote_source_dir/$remote_build_dir_name"
     fi
 }
 
