@@ -20,7 +20,7 @@ _vkdbg_build_remote() {
     local user="root"
     local addr
     local remote_source_dir="/usr/local/src/"
-    local hide_log_posfix=" &>/dev/null"
+    local verbose=false
 
     while (("$#")); do
         case "$1" in
@@ -28,7 +28,7 @@ _vkdbg_build_remote() {
                 shift && build_file=$1
                 ;;
             --verbose | -v)
-                hide_log_posfix=""
+                verbose=true
                 ;;
             --)
                 shift && build_args="$*"
@@ -71,6 +71,7 @@ _vkdbg_build_remote() {
     error=$?
 
     assert_empty "$addr" "Please, specify machine address"
+
     source "$build_file"
     vkdbg_env
 
@@ -88,16 +89,39 @@ _vkdbg_build_remote() {
     remote_build_dir_name="$(basename "$local_source_root_dir")"
     build_file_name="$(basename "$build_file")"
 
+    local copy_id_cmd
+    local copy_src_cmd
+    local build_cmd
+    local pull_artifacts_cmd
+
+    copy_id_cmd="ssh-copy-id $user@$addr"
+    copy_src_cmd="scp -r $local_source_root_dir $user@$addr:$remote_source_dir"
+    build_cmd="ssh $user@$addr (cd $remote_source_dir/$remote_build_dir_name; source $build_file_name; vkdbg_build $build_args)"
+    pull_artifacts_cmd="scp -r $user@$addr:$remote_source_dir/$remote_build_dir_name/$VKDBG_ARTIFACTS_DIR remote_artifacts/"
+
     log_info "Connecting..."
-    ssh-copy-id "$user@$addr" $hide_log_posfix
+    if $verbose; then
+        $copy_id_cmd
+    else
+        $copy_id_cmd &>/dev/null
+    fi
     log_info "Pushing sources..."
-    scp -r "$local_source_root_dir" "$user@$addr:$remote_source_dir" $hide_log_posfix
-    ssh "$user@$addr" "(cd $remote_source_dir/$remote_build_dir_name; source $build_file_name; vkdbg_build $build_args)"
+    if $verbose; then
+        $copy_src_cmd
+    else
+        $copy_src_cmd &>/dev/null
+    fi
+    log_info "Building..."
+    $build_cmd
     if [ ! -d remote_artifacts ]; then
         mkdir remote_artifacts
     fi
     log_info "Pulling artifacts..."
-    scp -r "$user@$addr:$remote_source_dir/$remote_build_dir_name/$VKDBG_ARTIFACTS_DIR" remote_artifacts/ $hide_log_posfix
+    if $verbose; then
+        $pull_artifacts_cmd
+    else
+        $pull_artifacts_cmd &>/dev/null
+    fi
 }
 
 _vkdbg_build_cmd_help() {
