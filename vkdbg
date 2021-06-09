@@ -16,7 +16,12 @@
 #    You should have received a copy of the GNU General Public License
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
-_VKDBG_ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" &>/dev/null && pwd)"
+vkdbg_file="${BASH_SOURCE[0]}"
+if [[ -L "$vkdbg_file" ]]; then
+    vkdbg_file=$(readlink -f "$vkdbg_file")
+fi
+
+_VKDBG_ROOT_DIR="$(cd "$(dirname "$vkdbg_file")" &>/dev/null && pwd)"
 
 source "$_VKDBG_ROOT_DIR/scripts/sh/checks"
 source "$_VKDBG_ROOT_DIR/scripts/sh/bundle"
