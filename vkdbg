@@ -29,11 +29,16 @@ source "$_VKDBG_ROOT_DIR/scripts/sh/unpack"
 source "$_VKDBG_ROOT_DIR/scripts/sh/env"
 source "$_VKDBG_ROOT_DIR/scripts/sh/log"
 source "$_VKDBG_ROOT_DIR/scripts/sh/vm"
+source "$_VKDBG_ROOT_DIR/scripts/sh/build"
 
 check_all_vkdbg_deps
 
 while (("$#")); do
     case "$1" in
+    build)
+        shift && vkdbg_build_cmd "$@"
+        exit 0
+        ;;
     vm)
         shift && vkdbg_vm_cmd "$@"
         exit 0

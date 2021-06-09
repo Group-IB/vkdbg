@@ -1,0 +1,124 @@
+#!/bin/bash
+
+_vkdbg_build_remote_help() {
+    log_info "Build on remote vm"
+    log_continue "$_VKDBG_NAME vm connect [machine (default: current)] [flags]"
+    log_continue "Available flags"
+    log_continue "    --file    | -f - Specify build file"
+    log_continue "    --host    | -a - Set remote addr"
+    log_continue "    --user    | -u - Set remote user"
+    log_continue "    -- [args]      - Pass build args to script"
+    exit 0
+}
+
+_vkdbg_build_remote() {
+    local target_machine
+    local target_machine_dir
+    local build_file="$(pwd)/.vkbuild"
+    local build_args
+    local user="root"
+    local addr
+    local remote_source_dir="/usr/local/src/"
+
+    while (("$#")); do
+        case "$1" in
+            --file | -f)
+                shift && build_file=$1
+                ;;
+            --)
+                shift && build_args="$*"
+                break
+                ;;
+            --help | -h)
+                _vkdbg_build_remote_help
+                exit 0
+                ;;
+            --addr | -a)
+                shift && addr=$1
+                ;;
+            --user | -u)
+                shift && user=$1
+                ;;
+            --*)
+                log_error "Unknown key $1"
+                exit 1
+                ;;
+            *)
+                target_machine=$1
+                ;;
+        esac
+        shift
+    done
+
+    if [ ! -f "$build_file" ]; then
+        log_error "Couldn't find $build_file"
+        exit 1
+    fi
+
+    local error
+    if [[ -z "$target_machine" ]]; then
+        target_machine=$(get_vkdbg_current_vm)
+        target_machine_dir=$(get_vkdbg_vm_directory "$target_machine")
+        log_info "Machine wasn't explicitly specified, chosen current ($target_machine)"
+    else
+        target_machine_dir=$(get_vkdbg_vm_directory "$target_machine")
+    fi
+    error=$?
+
+    assert_empty "$addr" "Please, specify machine address"
+    source "$build_file"
+    vkdbg_env
+
+    if [ -z "$VKDBG_ARTIFACTS_DIR" ]; then
+        VKDBG_ARTIFACTS_DIR=$remote_source_dir
+    fi
+
+    log_info "Artifacts dir: $VKDBG_ARTIFACTS_DIR"
+
+    local local_source_root_dir
+    local remote_build_dir_name
+    local build_file_name
+
+    local_source_root_dir="$(dirname "$build_file")"
+    remote_build_dir_name="$(basename "$local_source_root_dir")"
+    build_file_name="$(basename "$build_file")"
+
+    ssh-copy-id "$user@$addr" >/dev/null
+    scp -r "$local_source_root_dir" "$user@$addr:$remote_source_dir"
+    ssh "$user@$addr" "(cd $remote_source_dir/$remote_build_dir_name; source $build_file_name; vkdbg_build $build_args)"
+    mkdir -f remote_artifacts
+    scp -r "$user@$addr:$remote_source_dir/$remote_build_dir_name/$VKDBG_ARTIFACTS_DIR" remote_artifacts/
+}
+
+_vkdbg_build_cmd_help() {
+    log_info "Build your sources"
+    log_continue "$_VKDBG_NAME build <cmd> [flags]"
+    log_continue "  All commands in this module requires build file named .vkbuild (also can be specified with -f flag)"
+    log_continue "  Any build file should contains several field with build information:"
+    log_continue "    * vkdbg_env - function contains exporting local variables to help VKDBG:"
+    log_continue "      - VKDBG_ARTIFACTS_DIR - artifact which will be downloaded"
+    log_continue "    * vkdbg_build - function which will be called after sources will be uploaded to vm. Should "
+    log_continue "      provide sequence of build commands"
+    log_continue "  Available commands:"
+    log_continue "      remote     - build sources on remote virtual machine"
+    exit 0
+}
+vkdbg_build_cmd() {
+    while (("$#")); do
+        case "$1" in
+            remote)
+                shift && _vkdbg_build_remote "$@"
+                exit 0
+                ;;
+            --help | -h)
+                _vkdbg_build_cmd_help
+                exit 0
+                ;;
+            *)
+                log_error "Unknown command $1"
+                exit 1
+                ;;
+        esac
+        shift
+    done
+}
