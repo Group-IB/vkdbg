@@ -31,6 +31,27 @@ source "$_VKDBG_ROOT_DIR/scripts/sh/log"
 source "$_VKDBG_ROOT_DIR/scripts/sh/vm"
 source "$_VKDBG_ROOT_DIR/scripts/sh/build"
 
+_check_update() {
+    local git_upstream
+    local git_local
+    local git_remote
+    local git_base
+    (
+        cd "$_VKDBG_ROOT_DIR" || return
+        git_upstream=${1:-'@{u}'}
+        git_local=$(git rev-parse @)
+        git_remote=$(git rev-parse "$git_upstream")
+        git_base=$(git merge-base @ "$git_upstream")
+
+        if [ "$git_local" = "$git_remote" ]; then
+            log_info "You're using latest version"
+        elif [ "$git_local" = "$git_base" ]; then
+            log_info "There's update"
+        else
+            log_info "Diverged"
+        fi
+    )
+}
 
 _bootstrap() {
     log_info "Checking deps..."
@@ -54,6 +75,7 @@ _vkdbg_help() {
     log_info "This utility is intended for assisting in kernel/kernel module development and debugging."
     log_continue "Usage: $_VKDBG_NAME <command>"
     log_continue "Available commands"
+    log_continue "    update    - check for updates"
     log_continue "    bootstrap - first init and deps check"
     log_continue "    build     - build project which will be integrated with vkdbg"
     log_continue "    vm        - vm control"
@@ -70,6 +92,10 @@ fi
 
 while (("$#")); do
     case "$1" in
+        update)
+            _check_update "main"
+            exit 0
+        ;;
         bootstrap)
             _bootstrap
             exit 0
