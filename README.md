@@ -14,25 +14,30 @@ This utility is intended for assisting in kernel/kernel module development and d
 
 Before we start, let's do some preparations.
 
-1. Find a QCOW2 image of the machine you want or create it by yourself and then find some debug sources in rpm format (deb is coming soon). Your best choice is fedora / CentOS images as both of them have good debug sources and kernel images.
+1. Initialize VKDBG with command. After that, you can use it from anywhere.
+```bash
+./vkdbg bootstrap
+```
+
+2. Find a QCOW2 image of the machine you want or create it by yourself and then find some debug sources in rpm format (deb is coming soon). Your best choice is fedora / CentOS images as both of them have good debug sources and kernel images.
 
 
-2. Let's create your first VKDBG bundle, a command below creates a virtual machine environment bundle for fast migration.
+3. Let's create your first VKDBG bundle, a command below creates a virtual machine environment bundle for fast migration.
 
 ```bash
 ./vkgdb bundle create -p <path_to_qcow> -r <path_to_dir_with_rpms> [-n bundle_name] 
 ```
 
-3. This process will take some time and it will take even longer, depending on the size of your image and sources, we can continue after bundle creation. 
+4. This process will take some time and it will take even longer, depending on the size of your image and sources, we can continue after bundle creation. 
 A command to create a VKDBG environment for your VM
 
 ```bash
  ./vkdbg vm init <machine_name> -p <path_to_bundle> 
 ```
 
-4. If you don't have a virtual machine, create it following the instructions from the output of the previous command
+5. If you don't have a virtual machine, create it following the instructions from the output of the previous command
 
-5. Well, all's done! Now, you can debug and manipulate this machine in any way you want as a simple program. Just run
+6. Well, all's done! Now, you can debug and manipulate this machine in any way you want as a simple program. Just run
 
 ```bash
 ./vkdbg vm set-current <machine_name> (optionally)
