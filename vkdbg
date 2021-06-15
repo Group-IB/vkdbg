@@ -31,26 +31,69 @@ source "$_VKDBG_ROOT_DIR/scripts/sh/log"
 source "$_VKDBG_ROOT_DIR/scripts/sh/vm"
 source "$_VKDBG_ROOT_DIR/scripts/sh/build"
 
-check_all_vkdbg_deps
+
+_bootstrap() {
+    log_info "Checking deps..."
+    check_all_vkdbg_deps
+
+    local privileged
+    local link_file="/usr/local/bin/vkdbg"
+
+    log_info "Checking privileges..."
+    privileged=$(check_privileges)
+
+    if [ ! -L $link_file ]; then
+        $privileged ln -s "${BASH_SOURCE[0]}" /usr/local/bin/vkdbg
+        log_info "${BASH_SOURCE[0]} -> /usr/local/bin/vkdbg"
+    fi
+
+    log_info "Done"
+}
+
+_vkdbg_help() {
+    log_info "This utility is intended for assisting in kernel/kernel module development and debugging."
+    log_continue "Usage: $_VKDBG_NAME <command>"
+    log_continue "Available commands"
+    log_continue "    bootstrap - first init and deps check"
+    log_continue "    build     - build project which will be integrated with vkdbg"
+    log_continue "    vm        - vm control"
+    log_continue "    bundle    - bundle of VMs control"
+    log_continue "    help      - show this message"
+    log_continue "Use --help flag for any command to get more information"
+    exit 0
+}
+
+if [ $# -eq 0 ]; then
+    _vkdbg_help
+    exit 1
+fi
 
 while (("$#")); do
     case "$1" in
-    build)
-        shift && vkdbg_build_cmd "$@"
-        exit 0
-        ;;
-    vm)
-        shift && vkdbg_vm_cmd "$@"
-        exit 0
-        ;;
-    bundle)
-        shift && vkdbg_bundle_cmd "$@"
-        exit 0
-        ;;
-    *)
-        log_error "Unknown command $1"
-        exit 1
-        ;;
+        bootstrap)
+            _bootstrap
+            exit 0
+            ;;
+        build)
+            shift && vkdbg_build_cmd "$@"
+            exit 0
+            ;;
+        vm)
+            shift && vkdbg_vm_cmd "$@"
+            exit 0
+            ;;
+        bundle)
+            shift && vkdbg_bundle_cmd "$@"
+            exit 0
+            ;;
+        help)
+            _vkdbg_help
+            exit 0
+            ;;
+        *)
+            log_error "Unknown command $1"
+            exit 1
+            ;;
     esac
     shift
 done
