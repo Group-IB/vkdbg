@@ -46,3 +46,7 @@ A command to create a VKDBG environment for your VM
 ```
 
 For more information, you can use ```--help``` for almost any command.
+
+## Read more
+* https://access.redhat.com/blogs/766093/posts/2690881
+* https://fedoraproject.org/wiki/How_to_debug_Virtualization_problems
