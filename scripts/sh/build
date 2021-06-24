@@ -16,13 +16,15 @@ _vkdbg_build_remote_help() {
 _vkdbg_build_remote() {
     local target_machine
     local target_machine_dir
-    local build_file="$(pwd)/.vkbuild"
+    local build_file
     local build_args
     local user="root"
     local addr
     local remote_source_dir="/usr/local/src/"
     local verbose=false
     local install=false
+
+    build_file="$(pwd)/.vkbuild"
 
     while (("$#")); do
         case "$1" in
