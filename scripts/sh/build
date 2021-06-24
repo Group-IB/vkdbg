@@ -22,7 +22,7 @@ _vkdbg_build_remote() {
     local addr
     local remote_source_dir="/usr/local/src/"
     local verbose=false
-    local install
+    local install=false
 
     while (("$#")); do
         case "$1" in
@@ -132,7 +132,7 @@ _vkdbg_build_remote() {
         $pull_artifacts_cmd &>/dev/null
     fi
 
-    if $install; then
+    if [ $install = true ]; then
         local root_dir
         root_dir=$(get_vkdbg_vm_root_directory "$target_machine")
         log_info "Installing sources to environment..."
