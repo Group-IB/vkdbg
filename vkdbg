@@ -46,7 +46,17 @@ _check_update() {
         if [ "$git_local" = "$git_remote" ]; then
             log_info "You're using latest version"
         elif [ "$git_local" = "$git_base" ]; then
-            log_info "There's update"
+            local update=true
+            local answ
+            answ=$(log_and_read "Would you like to update? [Y/n]")
+            if [[ "$answ" == "n" || "$answ" == "N" || "$answ" == "no" || "$answ" == "No" ]]; then
+                answ=false
+            fi
+
+            git reset --hard
+            git stash
+            git switch main
+            git pull
         else
             log_info "Diverged"
         fi
@@ -95,7 +105,7 @@ while (("$#")); do
         update)
             _check_update "main"
             exit 0
-        ;;
+            ;;
         bootstrap)
             _bootstrap
             exit 0
