@@ -17,6 +17,7 @@
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
 
 _VKDBG_DEBUG_RPM_DIR="debug-rpm"
+_VKDBG_DEBUG_DEB_DIR="debug-deb"
 
 _link_kernels_data() {
     mkdir -p versions
@@ -84,6 +85,46 @@ _unpack_debug_rpm() {
     return 0
 }
 
+_unpack_debug_deb() {
+    local dep_err=false
+
+    check_vkdbg_additional_deps ar
+    dep_err=$(($? | $dep_err))
+
+    check_vkdbg_additional_deps tar
+    dep_err=$(($? | $dep_err))
+
+    if [[ $dep_err -eq 1 ]]; then
+        log_error "Error unpacking deb. Not all dependencies satisfied"
+        return 1
+    fi
+
+    target_directory=$1
+    mkdir -p "$target_directory/root"
+    log_info "Copying debs"
+    cp "$target_directory/$_VKDBG_DEBUG_DEB_DIR"/* "$target_directory/root"
+    (
+        cd "$target_directory/root" || exit 1
+        ar_executable=$(which ar)
+        tar_executable=$(which tar)
+
+        log_info "Installing debug sources and packages"
+        for filename in "$target_machine_dir"/root/*.deb; do
+            log_info "Processing $filename"
+            $ar_executable vx "$filename"
+            $tar_executable -xvf "data.tar.xz"
+
+            rm "data.tar.xz"
+            rm "control.tar.xz"
+            rm "debian-binary"
+        done
+
+        rm "$target_machine_dir"/root/*.deb
+    )
+
+    return 0
+}
+
 check_and_prepare_vkdbg_sources() {
     local target_machine=$1
     local target_machine_dir
@@ -95,7 +136,12 @@ check_and_prepare_vkdbg_sources() {
         log_info "Found debug rpm directory"
          _unpack_debug_rpm "$target_machine_dir"
          error=$?
+    elif [[ -d "$target_machine_dir/$_VKDBG_DEBUG_DEB_DIR" ]]; then
+        log_info "Found debug deb directory"
+         _unpack_debug_deb "$target_machine_dir"
+         error=$?
     fi
+
 
     if [[ $error != 0 ]]; then
         log_error "Error occurred while unpacking, please"

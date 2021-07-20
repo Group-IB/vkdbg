@@ -22,7 +22,7 @@ _vkdbg_build_remote() {
     local addr
     local remote_source_dir="/usr/local/src/"
     local verbose=false
-    local install
+    local install=false
 
     while (("$#")); do
         case "$1" in

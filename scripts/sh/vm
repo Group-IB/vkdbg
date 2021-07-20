@@ -86,7 +86,8 @@ _vkdbg_vm_init() {
                 shift && use_cached=true
                 ;;
             --help | -h)
-                shift && use_cached=true
+                _vkdbg_vm_init_help
+                exit 0
                 ;;
             --*)
                 _vkdbg_vm_init_help
@@ -116,6 +117,8 @@ _vkdbg_vm_init() {
             assert_empty "$server_addr" "Please specify remote host (--host | -a)"
             assert_empty "$server_user" "Please specify remote user (--user | -u)"
             _vkdbg_vm_pull_remote "$server_user@$server_addr" "$path" "$target_machine_dir" "$server_key"
+        elif [[ $use_cached == true ]]; then
+            pass
         else
             assert_empty "$path" "Please, specify path to bundle"
             cp "$path" "$target_machine_dir/bundle.tar.gz"
@@ -519,7 +522,7 @@ _vkdbg_vm_add_kernel_module_object() {
     local debug_module=$2
 
     target_machine_data_dir=$(get_vkdbg_vm_data_directory "$target_machine")
-    
+
     if [[ ! -d "$target_machine_data_dir/module-objects/" ]]; then
         mkdir -p "$target_machine_data_dir/module-objects/"
     fi

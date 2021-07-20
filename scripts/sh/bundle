@@ -28,7 +28,7 @@ _vkdbg_bundle_create_help() {
     log_continue "Available flags"
     log_continue "    --image | -i - qcow2 image for qemu"
     log_continue "    --rpms  | -r - directory contains rpm packages with kernel debug info"
-    log_continue "    --apks  | -a - directory contains apk packages with kernel debug info"
+    log_continue "    --debs  | -d - directory contains apk packages with kernel debug info"
     log_continue "    --name  | -n - set bundle name"
     log_continue "    --meta  | -m - metadata field (in key=value format)"
     log_continue "Possible metadata fields:"
@@ -52,7 +52,7 @@ _vkdbg_bundle_create() {
             --rpms | -r)
                 shift && rpms_dir=$1
                 ;;
-            --apks | -a)
+            --debs | -d)
                 shift && apks_dir=$1
                 ;;
             --name | -n)
@@ -105,7 +105,7 @@ _vkdbg_bundle_create() {
             package_type="rpm"
         elif [[ -n $apks_dir ]]; then
             packages_dir=$apks_dir
-            package_type="apk"
+            package_type="deb"
         fi
     fi
 
