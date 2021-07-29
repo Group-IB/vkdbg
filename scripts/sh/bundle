@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/bin/bash -x
 
 #    This file is part of the vkdbg distribution (https://github.com/Group-IB/vkdbg).
 #    Copyright (C) 2021 Timur Chernykh
@@ -26,11 +26,12 @@ _vkdbg_bundle_cmd_help() {
 _vkdbg_bundle_create_help() {
     log_message "Create bundle"
     log_continue "Available flags"
-    log_continue "    --image | -i - qcow2 image for qemu"
-    log_continue "    --rpms  | -r - directory contains rpm packages with kernel debug info"
-    log_continue "    --debs  | -d - directory contains apk packages with kernel debug info"
-    log_continue "    --name  | -n - set bundle name"
-    log_continue "    --meta  | -m - metadata field (in key=value format)"
+    log_continue "    --image   | -i - qcow2 image for qemu"
+    log_continue "    --rpms    | -r - directory contains rpm packages with kernel debug info"
+    log_continue "    --debs    | -d - directory contains apk packages with kernel debug info"
+    log_continue "    --name    | -n - set bundle name"
+    log_continue "    --meta    | -m - metadata field (in key=value format)"
+    log_continue "    --config  | -c - path to virt-manager XML configuration file for VM"
     log_continue "Possible metadata fields:"
     log_continue "    key: creds, value: \$USER:\$PASSWORD from machine root user"
 }
@@ -39,8 +40,10 @@ _vkdbg_bundle_create() {
     local qcow_image
     local rpms_dir
     local apks_dir
+    local pkgs_dir
     local bundle_name
     local packages_dir
+    local config_file
 
     local meta_creds
 
@@ -55,6 +58,9 @@ _vkdbg_bundle_create() {
             --debs | -d)
                 shift && apks_dir=$1
                 ;;
+            --pkgs | -p)
+                shift && pkgs_dir=$1
+                ;;
             --name | -n)
                 shift && bundle_name=$1
                 ;;
@@ -66,6 +72,9 @@ _vkdbg_bundle_create() {
                 if [[ "$1" == creds=* ]]; then
                     meta_creds=$val
                 fi
+                ;;
+            --config | -c)
+                shift && config_file=$1
                 ;;
             --help | -h)
                 _vkdbg_bundle_create_help
@@ -79,22 +88,25 @@ _vkdbg_bundle_create() {
         shift
     done
 
-    if [[ -z $rpms_dir ]] && [[ -z $apks_dir ]]; then
+    if [[ -z $rpms_dir ]] && [[ -z $apks_dir ]] && [[ -z $pkgs_dir ]]; then
         log_error "Specify al least one directory with debug packages"
         exit 1
     fi
 
     local package_type
 
-    if [[ -n $rpms_dir ]] && [[ -n $apks_dir ]]; then
+    if [[ -n $rpms_dir ]] && [[ -n $apks_dir ]] && [[ -n $pkgs_dir ]]; then
         log_warning "Using shuffled package types may cause of unresolvable conflicts!"
         log_continue "1) rpm"
         log_continue "2) apk"
-        i=$(log_and_read "Please, choose one (1,2): ")
+        log_continue "3) pkgs"
+        i=$(log_and_read "Please, choose one (1,2,3): ")
         if [[ $i == "1" ]]; then
             package_type="rpm"
         elif [[ $i == "2" ]]; then
             package_type="apk"
+        elif [[ $i == "3" ]]; then
+            package_type="pkg"
         else
             log_error "Aborting"
             exit 1
@@ -106,6 +118,9 @@ _vkdbg_bundle_create() {
         elif [[ -n $apks_dir ]]; then
             packages_dir=$apks_dir
             package_type="deb"
+        elif [[ -n $pkgs_dir ]]; then
+            packages_dir=$pkgs_dir
+            package_type="pkg"
         fi
     fi
 
@@ -116,6 +131,12 @@ _vkdbg_bundle_create() {
     fi
 
     log_info "Checking up $packages_dir"
+    if [ ! -d "$packages_dir" ] 
+    then
+        log_error "$packages_dir is not a directory!"
+        exit 1
+    fi
+
     excess_files=$(find "$packages_dir" -type f | grep -v "$package_type")
 
     log_info "Checking up $qcow_image"
@@ -143,7 +164,7 @@ _vkdbg_bundle_create() {
     mkdir -p "$bundled_packages_dir"
     mkdir -p ".$_VKDBG_NAME/$bundle_name/meta"
     cp "$qcow_image" ".$_VKDBG_NAME/$bundle_name/image.qcow2"
-    for package in "$packages_dir/"*."$package_type"; do
+    for package in "$packages_dir/"*."$package_type"*; do
         cp "$package" "$bundled_packages_dir"
     done
 
@@ -151,14 +172,19 @@ _vkdbg_bundle_create() {
         echo "$meta_creds" >>".$_VKDBG_NAME/$bundle_name/meta/creds"
     fi
 
-    (
-        log_info "Creating bundle..."
-        cd ".$_VKDBG_NAME/$bundle_name/" || exit 1
-        tar -czvf "$bundle_name.tar.gz" .
-    )
+    if [[ -n $config_file ]]; then
+        cp $config_file ".$_VKDBG_NAME/$bundle_name/meta/config.xml"
+    fi
 
-    mv ".$_VKDBG_NAME/$bundle_name/$bundle_name.tar.gz" .
-    rm -rf ".$_VKDBG_NAME/"
+    
+    log_info "Creating bundle..."
+    cd ".$_VKDBG_NAME/$bundle_name/" || exit 1
+    tar -czvf ../"$bundle_name.tar.gz" .
+    
+
+    cd -
+    mv ".$_VKDBG_NAME/$bundle_name.tar.gz" .
+    #rm -rf ".$_VKDBG_NAME/"
 }
 
 vkdbg_bundle_cmd() {
