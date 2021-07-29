@@ -1,4 +1,4 @@
-#!/bin/bash -x
+#!/bin/bash
 
 #    This file is part of the vkdbg distribution (https://github.com/Group-IB/vkdbg).
 #    Copyright (C) 2021 Timur Chernykh
