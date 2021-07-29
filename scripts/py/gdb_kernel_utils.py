@@ -286,14 +286,13 @@ detach_kernel_cmd = DetachKernel()
 
 
 class Module:
-    # *(*(*(struct module*)((uintptr_t*)modules - 1)).sect_attrs).attrs
-    name: str
-    text: None
-    kprobes_text: None
-    data: None
-    bss: None
-    symtab: None
-    address: None
+    def __init__(self):
+        self.name = ""
+        self.text = None
+        self.data = None
+        self.bss = None
+        self.symtab = None
+        self.address = None
 
 
 def get_pure_string_from_gdb_ptr(char_ptr) -> str:
@@ -319,8 +318,6 @@ def fill_sections(module: Module, raw_module):
                 module.data = hex(int(address))
             elif name == '.symtab':
                 module.symtab = hex(int(address))
-            elif name == '.kprobes.text':
-                module.kprobes_text = hex(int(address))
     except Exception as e:
         error(str(e))
 
@@ -514,8 +511,7 @@ class AttachKernelModule(gdb.Command):
         gdb.execute(f"add-symbol-file {module_object} {found_module.text} "
                     f"-s .bss {found_module.bss} "
                     f"-s .data {found_module.data} "
-                    f"-s .symtab {found_module.symtab} "
-                    f"-s .kprobes.text {found_module.kprobes_text}")
+                    f"-s .symtab {found_module.symtab} ")
 
         attached_module_objects.append(module_object)
         message(f"Source dir: {src_dir}")

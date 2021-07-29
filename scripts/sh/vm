@@ -934,7 +934,7 @@ vkdbg_vm_cmd() {
                 exit 0
                 ;;
             deinit)
-                shift && _vkdbg_vm_init "$@"
+                shift && _vkdbg_vm_deinit "$@"
                 exit 0
                 ;;
             start)
