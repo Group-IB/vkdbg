@@ -76,7 +76,7 @@ _unpack_debug_rpm() {
         log_info "Installing debug sources and packages"
         for filename in "$target_machine_dir"/root/*.rpm; do
             log_info "Processing $filename"
-            $rpm2cpio_executable "$filename" | cpio -idm
+            $rpm2cpio_executable "$filename" | bsdtar -xf -
         done
 
         rm "$target_machine_dir"/root/*.rpm
