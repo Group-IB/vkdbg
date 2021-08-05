@@ -18,6 +18,7 @@
 
 _VKDBG_DEBUG_RPM_DIR="debug-rpm"
 _VKDBG_DEBUG_DEB_DIR="debug-deb"
+_VKDBG_DEBUG_DEB_DIR="debug-pkg"
 
 _link_kernels_data() {
     mkdir -p versions
@@ -27,7 +28,7 @@ _link_kernels_data() {
     (
         cd "$target_machine_dir" || exit 1
 
-        for vmlinux_path in $(find root -type f | grep vmlinux$); do
+        for vmlinux_path in $(find root -type f | grep -e "vmlinux$\|vmlinuz$"); do
             version=$(echo "$vmlinux_path" | xargs dirname | xargs basename -a)
             kernel_link_name="kernel-$version"
             log_info "Found kernel at $vmlinux_path, version: $version"
@@ -125,6 +126,38 @@ _unpack_debug_deb() {
     return 0
 }
 
+_unpack_debug_pkg() {
+    local dep_err=false
+
+    check_vkdbg_additional_deps tar
+    dep_err=$(($? | $dep_err))
+
+    if [[ $dep_err -eq 1 ]]; then
+        log_error "Error unpacking pkg. Not all dependencies satisfied"
+        return 1
+    fi
+
+    target_directory=$1
+    mkdir -p "$target_directory/root"
+    log_info "Copying debs"
+    cp "$target_directory/$_VKDBG_DEBUG_DEB_DIR"/* "$target_directory/root"
+    (
+        cd "$target_directory/root" || exit 1
+        ar_executable=$(which ar)
+        tar_executable=$(which tar)
+
+        log_info "Installing debug sources and packages"
+        for filename in "$target_machine_dir"/root/*.zst; do
+            log_info "Processing $filename"
+            $tar_executable -I zstd -xvf "$filename"
+        done
+
+        rm "$target_machine_dir"/root/*.zst
+    )
+
+    return 0
+}
+
 check_and_prepare_vkdbg_sources() {
     local target_machine=$1
     local target_machine_dir
@@ -134,14 +167,17 @@ check_and_prepare_vkdbg_sources() {
 
     if [[ -d "$target_machine_dir/$_VKDBG_DEBUG_RPM_DIR" ]]; then
         log_info "Found debug rpm directory"
-         _unpack_debug_rpm "$target_machine_dir"
-         error=$?
+        _unpack_debug_rpm "$target_machine_dir"
+        error=$?
+    elif [[ -d "$target_machine_dir/$_VKDBG_DEBUG_PKG_DIR" ]]; then
+        log_info "Found debug pkg directory"
+        _unpack_debug_pkg "$target_machine_dir"
+        error=$?
     elif [[ -d "$target_machine_dir/$_VKDBG_DEBUG_DEB_DIR" ]]; then
         log_info "Found debug deb directory"
-         _unpack_debug_deb "$target_machine_dir"
-         error=$?
+        _unpack_debug_deb "$target_machine_dir"
+        error=$?
     fi
-
 
     if [[ $error != 0 ]]; then
         log_error "Error occurred while unpacking, please"

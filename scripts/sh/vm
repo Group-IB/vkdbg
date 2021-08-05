@@ -118,11 +118,10 @@ _vkdbg_vm_init() {
             assert_empty "$server_user" "Please specify remote user (--user | -u)"
             _vkdbg_vm_pull_remote "$server_user@$server_addr" "$path" "$target_machine_dir" "$server_key"
         elif [[ $use_cached == true ]]; then
-            pass
+            log_info "Starting..."
         else
             assert_empty "$path" "Please, specify path to bundle"
-            if [ ! -f "$target_machine_dir/bundle.tar.gz" ] || [ "$path" -nt "$target_machine_dir/bundle.tar.gz" ]
-            then
+            if [ ! -f "$target_machine_dir/bundle.tar.gz" ] || [ "$path" -nt "$target_machine_dir/bundle.tar.gz" ]; then
                 cp "$path" "$target_machine_dir/bundle.tar.gz"
             fi
         fi
@@ -146,38 +145,73 @@ _vkdbg_vm_init() {
 
         check_vkdbg_vm_env "$target_machine"
 
-        log_info "If your VM doesn't not exists yet, create it using image from bundle or using"
-        log_continue "or already unpacked image at $target_machine_dir/image.qcow2 and name it $target_machine"
-        log_continue "After (or, if machine already existed) add xmd scheme below to it's configuration"
-        log_continue "via virsh or virt-manager (read more there: https://access.redhat.com/blogs/766093/posts/2690881)"
-        log_continue "<domain type='kvm' xmlns:qemu='http://libvirt.org/schemas/domain/qemu/1.0'>"
-        log_continue "    <qemu:commandline>"
-        log_continue "        <qemu:arg value='-s'/>"
-        log_continue "    </qemu:commandline>"
-        log_continue "in the machine xml configuration (virsh)"
-        log_continue "You can also use bundled install script to set up and create machine (if it does not exist already): vkdbg vm install $target_machine "
+        _vkdbg_vm_install "$target_machine"
+        error=$?
+
+        if [[ error -eq 0 ]]; then
+            exit 0
+        else
+            log_info "If your VM doesn't not exists yet, create it using image from bundle or using"
+            log_continue "or already unpacked image at $target_machine_dir/image.qcow2 and name it $target_machine"
+            log_continue "After (or, if machine already existed) add xmd scheme below to it's configuration"
+            log_continue "via virsh or virt-manager (read more there: https://access.redhat.com/blogs/766093/posts/2690881)"
+            log_continue "<domain type='kvm' xmlns:qemu='http://libvirt.org/schemas/domain/qemu/1.0'>"
+            log_continue "    <qemu:commandline>"
+            log_continue "        <qemu:arg value='-s'/>"
+            log_continue "    </qemu:commandline>"
+            log_continue "in the machine xml configuration (virsh)"
+            log_continue "You can also use bundled install script to set up and create machine (if it does not exist already): vkdbg vm install $target_machine "
+        fi
+
+        log_info "Done"
     )
 }
 
-_vkdbg_vm_install(){
-    local target_machine=$1
+_vkdbg_vm_install_help() {
+    log_info "Install configuration for virt manager"
+    log_continue "$_VKDBG_NAME vm install <machine_name> [flags]"
+    log_continue "Available flags"
+    log_continue "    --help    | -h - show this message"
+    exit 0
+
+}
+
+_vkdbg_vm_install() {
+
+    local target_machine
+
+    while (("$#")); do
+        case "$1" in
+            --help | -h)
+                _vkdbg_vm_install_help
+                exit 0
+                ;;
+            --*)
+                _vkdbg_vm_install_help
+                exit 0
+                ;;
+            *)
+                target_machine=$1
+                ;;
+        esac
+        shift
+    done
 
     assert_empty "$target_machine" "Please, specify machine name"
-
     target_machine_dir="$(get_vkdbg_vm_directory "$target_machine")"
-
     assert_empty "$target_machine_dir" "Couldn't get directory machine directory"
-
     local meta_file_location="${target_machine_dir}/meta/config.xml"
 
-    if [ ! -f "$meta_file_location" ]
-    then
-        log_info "Cannot use bundled VM setup, the bundle did not provide a config in $target_machine_dir/meta/config.xml. You should execute virt-install manually"
-    exit 1
+    log_info "Installing configuration to virt-manager for ${target_machine}..."
+
+    if [ ! -f "$meta_file_location" ]; then
+        log_error "Cannot use bundled VM setup, the bundle did not provide a config in $target_machine_dir/meta/config.xml. You should execute virt-install manually"
+        exit 1
     fi
 
     sed -ie "s*DISK_PLACEHOLDER*${target_machine_dir}/image.qcow2*g" "${meta_file_location}"
-    sudo cp "$target_machine_dir"/meta/config.xml /etc/libvirt/qemu/"${target_machine}".xml || echo 'Could not place VM config to /etc/libvirt/qemu/"${target_machine}".xml'
+    elevated=$(check_privileges)
+    $elevated cp "$target_machine_dir"/meta/config.xml /etc/libvirt/qemu/"${target_machine}".xml
 }
 
 _vkdbg_vm_deinit() {
@@ -913,6 +947,7 @@ _vkdbg_vm_cmd_help() {
     log_continue "$_VKDBG_NAME vm <cmd> [flags]"
     log_continue "Available commands"
     log_continue "    init        - init debug env from existing bundle (see vm bundle --help)"
+    log_continue "    install     - install configuration for machine (see vm install --help)"
     log_continue "    deinit      - remove env"
     log_continue "    start       - start virtual machine"
     log_continue "    stop        - stop virtual machine"
