@@ -211,7 +211,8 @@ _vkdbg_vm_install() {
 
     sed -ie "s*DISK_PLACEHOLDER*${target_machine_dir}/image.qcow2*g" "${meta_file_location}"
     elevated=$(check_privileges)
-    $elevated cp "$target_machine_dir"/meta/config.xml /etc/libvirt/qemu/"${target_machine}".xml
+    $elevated virsh net-start default # TODO: parse net from config?
+    $elevated virsh create "$target_machine_dir"/meta/config.xml
 }
 
 _vkdbg_vm_deinit() {

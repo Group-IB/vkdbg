@@ -164,6 +164,8 @@ _vkdbg_bundle_create() {
     mkdir -p "$bundled_packages_dir"
     mkdir -p ".$_VKDBG_NAME/$bundle_name/meta"
     cp "$qcow_image" ".$_VKDBG_NAME/$bundle_name/image.qcow2"
+    chown nobody:kvm ".$_VKDBG_NAME/$bundle_name/image.qcow2"
+    chmod 0644 ".$_VKDBG_NAME/$bundle_name/image.qcow2"
     for package in "$packages_dir/"*."$package_type"*; do
         cp "$package" "$bundled_packages_dir"
     done
