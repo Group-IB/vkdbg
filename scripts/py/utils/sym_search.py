@@ -24,6 +24,7 @@ from pprint import pprint
 
 import requests
 
+remove_rc_flag = False
 sig_diff_flag = False
 major_only_flag = False
 up_to_flag = False
@@ -309,7 +310,8 @@ def help_usage():
     message_continue("\t-fo | --first-only      \t- search first symbol occurrence")
     message_continue("\t-mo | --major-only      \t- search in major versions only")
     message_continue("\t-up | --up-to           \t- search in version greater than")
-    message_continue("\t-sd | --signature-diffs \t- ")
+    message_continue("\t-sd | --signature-diffs \t- search signatures and diffs it")
+    message_continue("\t-wr | --without-rc      \t- remove rc versions")
     message_continue("\t-v  | --verbose         \t- verbose output")
 
 
@@ -340,6 +342,10 @@ if __name__ == '__main__':
 
         if _check_key(arg, "v", "verbose"):
             search_options.verbose = True
+            continue
+
+        if _check_key(arg, "wr", "without-rc"):
+            remove_rc_flag = True
             continue
 
         if _check_key_value(arg, "up", "up-to"):
@@ -374,6 +380,14 @@ if __name__ == '__main__':
                 continue
             major_versions.append(version)
             all_versions = major_versions
+
+    if remove_rc_flag:
+        new_versions = []
+        for version in all_versions:
+            if "rc" not in version:
+                new_versions.append(version)
+
+        all_versions = new_versions
 
     if not symbol:
         help_usage()
