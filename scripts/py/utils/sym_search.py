@@ -238,12 +238,20 @@ def find_occurrence(versions: list, symb: str, search_options: SearchOptions) ->
                         if symb in found_sig_parts and not sig_found:
                             sig_found = True
                             for part in found_sig_parts:
+                                if ";" in part:
+                                    split = part.split(';')
+                                    signature += f"{split[0]};"
+                                    sig_done = True
+                                    break
                                 signature += part
                         elif sig_found:
                             for part in found_sig_parts:
-                                signature += part
                                 if ";" in part:
+                                    split = part.split(';')
+                                    signature += f"{split[0]};"
                                     sig_done = True
+                                    break
+                                signature += part
 
                     sig = Signature()
                     sig.definition = signature
