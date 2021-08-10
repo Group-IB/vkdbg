@@ -299,7 +299,7 @@ def find_occurrence(versions: list, symb: str, search_options: SearchOptions) ->
             if search_options.first_only:
                 return all_found_symbols, True
 
-    return all_found_symbols, False
+    return all_found_symbols, len(all_found_symbols)
 
 
 def help_usage():
