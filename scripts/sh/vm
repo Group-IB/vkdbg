@@ -695,7 +695,7 @@ _vkdbg_vm_debug() {
 
     export VKDBG_CURRENT_KALLSYMS="$target_machine_data_dir/kallsyms"
     export VKDBG_CURRENT_KERNEL=$target_kernel
-    gdb --command "$_VKDBG_ROOT_DIR/scripts/py/gdb_kernel_utils.py" --dir "$target_kernel_sources" -q
+    gdb --command "$_VKDBG_ROOT_DIR/scripts/py/gdb/gdb_kernel_utils.py" --dir "$target_kernel_sources" -q
 }
 
 _vkdbg_vm_mount_help() {

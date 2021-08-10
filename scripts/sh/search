@@ -1,0 +1,49 @@
+#!/bin/bash
+
+#    This file is part of the vkdbg distribution (https://github.com/Group-IB/vkdbg).
+#    Copyright (C) 2021 Timur Chernykh
+#
+#    This program is free software: you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, either version 3 of the License, or
+#    (at your option) any later version.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with this program.  If not, see <https://www.gnu.org/licenses/>.
+
+_vkdbg_search_cmd_help() {
+    log_info "Search something"
+    log_continue "$_VKDBG_NAME search <what> [options]"
+    log_continue "Available commands"
+    log_continue "    symbol        - lookup symbol via https://elixir.bootlin.com/linux/"
+    exit 0
+}
+
+vkdbg_search_cmd() {
+    local error
+    while (("$#")); do
+        case "$1" in
+            symbol)
+                shift && "$_VKDBG_ROOT_DIR/scripts/py/utils/sym_search.py" "$@"
+                error=$?
+                exit $error
+                ;;
+            --help | -h)
+                _vkdbg_search_cmd_help
+                exit 0
+                ;;
+            *)
+                log_error "Unknown command $1"
+                exit 1
+                ;;
+        esac
+        shift
+    done
+
+    _vkdbg_search_cmd_help
+}

@@ -30,6 +30,7 @@ source "$_VKDBG_ROOT_DIR/scripts/sh/env"
 source "$_VKDBG_ROOT_DIR/scripts/sh/log"
 source "$_VKDBG_ROOT_DIR/scripts/sh/vm"
 source "$_VKDBG_ROOT_DIR/scripts/sh/build"
+source "$_VKDBG_ROOT_DIR/scripts/sh/search"
 
 _check_update() {
     local git_upstream
@@ -108,6 +109,10 @@ while (("$#")); do
             ;;
         bootstrap)
             _bootstrap
+            exit 0
+            ;;
+        search)
+            shift && vkdbg_search_cmd "$@"
             exit 0
             ;;
         build)
