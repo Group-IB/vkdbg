@@ -87,6 +87,7 @@ _vkdbg_help() {
     log_continue "Usage: $_VKDBG_NAME <command>"
     log_continue "Available commands"
     log_continue "    update    - check for updates"
+    log_continue "    search    - search something"
     log_continue "    bootstrap - first init and deps check"
     log_continue "    build     - build project which will be integrated with vkdbg"
     log_continue "    vm        - vm control"
