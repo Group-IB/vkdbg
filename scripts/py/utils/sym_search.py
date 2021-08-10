@@ -71,7 +71,7 @@ def print_results(signal, frame):
     message("Interrupting...")
     signatures = {}
     for sym_ in all_found_symbols:
-        pprint(sym_.data())
+        message(sym_.data())
         for sig in sym_.signatures:
             signatures[sym_.version] = sig
 
@@ -155,8 +155,6 @@ class Symbol:
             "member": self.member,
             "signatures": []
         }
-        for signature in self.signatures:
-            data["signatures"].append(signature.data())
 
         return data
 
