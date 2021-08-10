@@ -15,16 +15,48 @@
 #
 #    You should have received a copy of the GNU General Public License
 #    along with this program.  If not, see <https://www.gnu.org/licenses/>.
-import os
+
+
 import re
+import signal
 import sys
 from pprint import pprint
 
 import requests
 
+sig_diff_flag = False
+major_only_flag = False
+up_to_flag = False
+up_to_value = ""
+all_found_symbols = []
+
+
+class bcolors:
+    HEADER = '\033[95m'
+    OKBLUE = '\033[94m'
+    OKCYAN = '\033[96m'
+    OKGREEN = '\033[92m'
+    WARNING = '\033[93m'
+    FAIL = '\033[91m'
+    ENDC = '\033[0m'
+    BOLD = '\033[1m'
+    UNDERLINE = '\033[4m'
+
 
 def error(msg: str) -> None:
     print(f"[!] {msg}")
+
+
+def long_message(msg: str) -> None:
+    print(f"[+] {msg}", end='')
+
+
+def long_message_continue(msg: str) -> None:
+    print(f"{msg}", end='')
+
+
+def long_message_end(msg: str) -> None:
+    print(f"{msg}")
 
 
 def message(msg: str) -> None:
@@ -33,6 +65,23 @@ def message(msg: str) -> None:
 
 def message_continue(msg: str) -> None:
     print(f"\t{msg}")
+
+
+def print_results(signal, frame):
+    message("Interrupting...")
+    signatures = {}
+    for sym_ in all_found_symbols:
+        pprint(sym_.data())
+        for sig in sym_.signatures:
+            signatures[sym_.version] = sig
+
+    if sig_diff_flag:
+        for v in signatures:
+            long_message(
+                f"{v}: {bcolors.OKGREEN}{signatures[v].definition}{bcolors.ENDC} in {bcolors.UNDERLINE}{signatures[v].file}{bcolors.ENDC}")
+            long_message_end(f'{bcolors.ENDC}')
+
+    sys.exit(0)
 
 
 def _is_key(arg: str) -> bool:
@@ -73,25 +122,46 @@ def _get_key_value(arg: str) -> str:
     return ""
 
 
-class Symbol:
-    documented = 0
-    defined_macro = 0
-    defined_proto = 0
-    defined_func = 0
-    referenced = 0
-    member = 0
+class Signature:
+    file = ""
+    definition = ""
 
     def data(self):
         return {
+            "file": self.file,
+            "definition": self.definition
+        }
+
+
+class Symbol:
+
+    def __init__(self):
+        self.documented = 0
+        self.defined_macro = 0
+        self.defined_proto = 0
+        self.defined_func = 0
+        self.referenced = 0
+        self.member = 0
+        self.signatures = []
+        self.version = ""
+
+    def data(self):
+        data = {
             "documented": self.documented,
             "macro": self.defined_macro,
             "prototype": self.defined_proto,
             "function": self.defined_func,
-            "referenced": self.referenced
+            "referenced": self.referenced,
+            "member": self.member,
+            "signatures": []
         }
+        for signature in self.signatures:
+            data["signatures"].append(signature.data())
+
+        return data
 
     def exists(self):
-        return self.documented or self.defined_macro or self.defined_proto or self.defined_func or self.referenced
+        return self.documented or self.defined_macro or self.defined_proto or self.defined_func or self.referenced or self.member
 
 
 def get_linux_versions():
@@ -114,10 +184,11 @@ def chunk(seq, num):
 class SearchOptions:
     first_only = False
     verbose = False
+    collect_signatures = False
 
 
 def find_occurrence(versions: list, symb: str, search_options: SearchOptions) -> (any, bool):
-    all_symbols = []
+    global all_found_symbols
 
     for version in versions:
 
@@ -128,33 +199,59 @@ def find_occurrence(versions: list, symb: str, search_options: SearchOptions) ->
 
         resp = requests.get(f"https://elixir.bootlin.com/linux/v{version}/A/ident/{symb}")
 
-        sym = Symbol()
+        processed_sym = Symbol()
+        processed_sym.version = version
 
-        defined_prototypes = re.findall("Defined.* prototype:", resp.text)
+        defined_prototypes = re.findall(r"<a href=.*>.*\(as a prototype\)", resp.text)
         defined_prototypes_n = 0
 
-        defined_member = re.findall("Defined.* member:", resp.text)
+        defined_member = re.findall(r"\(as a member\)", resp.text)
         defined_member_n = 0
 
-        defined_macro = re.findall("Defined.* macro:", resp.text)
+        defined_macro = re.findall(r"Defined.* macro:", resp.text)
         defined_macro_n = 0
 
-        defined_func = re.findall("Defined.* function:", resp.text)
+        defined_func = re.findall(r"Defined.* function:", resp.text)
         defined_func_n = 0
 
-        referenced = re.findall("Referenced.* files:", resp.text)
+        referenced = re.findall(r"Referenced.* files:", resp.text)
         referenced_n = 0
 
-        documented = re.findall("Documented.* files:", resp.text)
+        documented = re.findall(r"Documented.* files:", resp.text)
         documented_n = 0
 
         if len(defined_prototypes) > 0:
-            defined_prototypes = defined_prototypes[0]
-            defined_prototypes_n = int(re.search(r"\d+", defined_prototypes)[0])
+            defined_prototypes_n = len(defined_prototypes)
+            if search_options.collect_signatures:
+                for found in defined_prototypes:
+                    file_link = re.findall(r"href=\"(.*)\"", found)[0]
+                    if search_options.verbose:
+                        message(f"Collection signature from https://elixir.bootlin.com/linux/{file_link}")
+                    sig_resp = requests.get(f"https://elixir.bootlin.com/linux/{file_link}")
+                    sig_found = False
+                    sig_done = False
+                    signature = ""
+                    for line in sig_resp.iter_lines():
+                        if sig_done:
+                            break
+                        found_sig_parts = re.findall(r">([ \w()*,;]*)<", line.decode())
+                        if symb in found_sig_parts and not sig_found:
+                            sig_found = True
+                            for part in found_sig_parts:
+                                signature += part
+                        elif sig_found:
+                            for part in found_sig_parts:
+                                signature += part
+                                if ";" in part:
+                                    sig_done = True
+
+                    sig = Signature()
+                    sig.definition = signature
+                    sig.file = file_link
+                    processed_sym.signatures.append(sig)
 
         if len(defined_member) > 0:
-            defined_member = defined_member[0]
-            defined_member_n = int(re.search(r"\d+", defined_member)[0])
+            defined_member_n = len(defined_member)
 
         if len(defined_macro) > 0:
             defined_macro = defined_macro[0]
@@ -173,40 +270,41 @@ def find_occurrence(versions: list, symb: str, search_options: SearchOptions) ->
             documented_n = int(re.search(r"\d+", documented)[0])
 
         if defined_prototypes_n:
-            sym.defined_proto = int(defined_prototypes_n)
+            processed_sym.defined_proto = int(defined_prototypes_n)
 
         if defined_member_n:
-            sym.member = int(defined_member_n)
+            processed_sym.member = int(defined_member_n)
 
         if defined_macro_n:
-            sym.defined_macro = int(defined_macro_n)
+            processed_sym.defined_macro = int(defined_macro_n)
 
         if defined_func_n:
-            sym.defined_func = int(defined_func_n)
+            processed_sym.defined_func = int(defined_func_n)
 
         if referenced_n:
-            sym.referenced = int(referenced_n)
+            processed_sym.referenced = int(referenced_n)
 
         if documented_n:
-            sym.documented = int(documented_n)
+            processed_sym.documented = int(documented_n)
 
-        if sym.exists() and search_options.first_only:
-            return sym, True
+        if processed_sym.exists():
+            all_found_symbols.append(processed_sym)
+            if search_options.first_only:
+                return all_found_symbols, True
 
-        all_symbols.append(sym)
-
-    return all_symbols, False
+    return all_found_symbols, False
 
 
 def help_usage():
     message(f"Search symbol via elixir.bootin")
     message_continue("vkdbg search symbol <symbol> [flags]")
     message_continue("Available flags:")
-    message_continue("\t-h  | --help       \t- show this message")
-    message_continue("\t-fo | --first-only \t- search first symbol occurrence")
-    message_continue("\t-mo | --major-only \t- search in major versions only")
-    message_continue("\t-up | --up-to      \t- search in version greater than")
-    message_continue("\t-v  | --verbose    \t- verbose output")
+    message_continue("\t-h  | --help            \t- show this message")
+    message_continue("\t-fo | --first-only      \t- search first symbol occurrence")
+    message_continue("\t-mo | --major-only      \t- search in major versions only")
+    message_continue("\t-up | --up-to           \t- search in version greater than")
+    message_continue("\t-sd | --signature-diffs \t- ")
+    message_continue("\t-v  | --verbose         \t- verbose output")
 
 
 if __name__ == '__main__':
@@ -214,12 +312,9 @@ if __name__ == '__main__':
         help_usage()
         exit(1)
 
+    signal.signal(signal.SIGINT, print_results)
     all_versions = get_linux_versions()
     all_versions.reverse()
-
-    major_only_flag = False
-    up_to_flag = False
-    up_to_value = ""
 
     symbol = ""
     search_options = SearchOptions()
@@ -244,6 +339,11 @@ if __name__ == '__main__':
         if _check_key_value(arg, "up", "up-to"):
             up_to_flag = True
             up_to_value = _get_key_value(arg)
+            continue
+
+        if _check_key(arg, "sd", "signature-diffs"):
+            sig_diff_flag = True
+            search_options.collect_signatures = True
             continue
 
         if not _is_key(arg):
@@ -276,11 +376,6 @@ if __name__ == '__main__':
     sym, found = find_occurrence(all_versions, symbol, search_options)
 
     if found:
-        if search_options.first_only:
-            pprint(sym.data())
-            exit(0)
-        for sym_found in sym:
-            pprint(sym_found.data())
-            exit(0)
+        print_results(None, None)
     else:
         error("Symbol not found :(")
