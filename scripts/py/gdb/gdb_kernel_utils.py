@@ -250,8 +250,15 @@ class AttachKernel(gdb.Command):
 
         try:
             object_stext_address = get_object_stext_address(kernel_image)
+            if object_stext_address is None:
+                raise Exception("Couldn't find stext address in object")
+
             kernel_base_address = get_kernel_base_address(kallsyms_file)
+            if object_stext_address is None:
+                raise Exception("Couldn't find stext address in running kernel (kallsyms)")
+
             offset = kernel_base_address - object_stext_address
+
         except Exception as e:
             error(f"Error while calculating offset: {str(e)}")
             return

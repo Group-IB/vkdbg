@@ -23,12 +23,12 @@ _VKDBG_DEBUG_DEB_DIR="debug-pkg"
 _link_kernels_data() {
     mkdir -p versions
     target_machine_dir=$1
-    log_info "Searching kernels and their sources..."
 
     (
+        log_info "Searching unpacked kernels and their sources..."
         cd "$target_machine_dir" || exit 1
 
-        for vmlinux_path in $(find root -type f | grep -e "/vmlinux$\|/vmlinuz$"); do
+        for vmlinux_path in $(find root -type f | grep -e "/vmlinux$"); do
             version=$(echo "$vmlinux_path" | xargs dirname | xargs basename -a)
             kernel_link_name="kernel-$version"
             log_info "Found kernel at $vmlinux_path, version: $version"
@@ -36,7 +36,31 @@ _link_kernels_data() {
             # create link to kernel symbols
             if [ ! -x "$kernel_link_name" ]; then
                 log_info "Creating symlink to found kernel $vmlinux_path"
-                ln "$vmlinux_path" "$kernel_link_name"
+                ln -s "$vmlinux_path" "$kernel_link_name"
+            fi
+
+            for src_dir in $(find . -type d | grep "$version/include$" | xargs dirname); do
+                src_link_name=src-$version
+                if [ ! -x "$src_link_name" ]; then
+                    log_info "Creating symlink to found kernel sources $src_dir"
+                    ln -s "$src_dir" "$src_link_name"
+                fi
+            done
+
+            touch "versions/$version"
+        done
+
+        log_info "Searching compressed kernels and their sources..."
+
+        for vmlinuz_path in $(find root -type f | grep -e "/vmlinuz$"); do
+            version=$(echo "$vmlinuz_path" | xargs dirname | xargs basename -a)
+            kernel_link_name="kernel-$version"
+            log_info "Found compressed kernel at $vmlinuz_path, version: $version"
+
+            # extract vmlinuz
+            if [ ! -x "$kernel_link_name" ]; then
+                log_info "Extracting vmlinuz using $_VKDBG_SHELL_SCRIPTS_DIR/extract-vmlinux to $vmlinuz_path"
+                "$_VKDBG_SHELL_SCRIPTS_DIR/extract-vmlinux" "$vmlinuz_path" >> "$kernel_link_name"
             fi
 
             for src_dir in $(find . -type d | grep "$version/include$" | xargs dirname); do

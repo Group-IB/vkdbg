@@ -22,6 +22,8 @@ if [[ -L "$vkdbg_file" ]]; then
 fi
 
 _VKDBG_ROOT_DIR="$(cd "$(dirname "$vkdbg_file")" &>/dev/null && pwd)"
+_VKDBG_SCRIPTS_DIR="$_VKDBG_ROOT_DIR/scripts"
+_VKDBG_SHELL_SCRIPTS_DIR="$_VKDBG_SCRIPTS_DIR/sh"
 
 source "$_VKDBG_ROOT_DIR/scripts/sh/checks"
 source "$_VKDBG_ROOT_DIR/scripts/sh/bundle"
