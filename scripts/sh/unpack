@@ -28,7 +28,7 @@ _link_kernels_data() {
     (
         cd "$target_machine_dir" || exit 1
 
-        for vmlinux_path in $(find root -type f | grep -e "vmlinux$\|vmlinuz$"); do
+        for vmlinux_path in $(find root -type f | grep -e "/vmlinux$\|/vmlinuz$"); do
             version=$(echo "$vmlinux_path" | xargs dirname | xargs basename -a)
             kernel_link_name="kernel-$version"
             log_info "Found kernel at $vmlinux_path, version: $version"
