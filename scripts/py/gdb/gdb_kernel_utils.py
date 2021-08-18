@@ -170,6 +170,13 @@ def get_kernel_base_address(kallsyms_file_path):
             return int(stext_addr, 16)
 
 
+def value_has_field(gdb_value, field: str):
+    for f in gdb_value.type.fields():
+        if field == f.name:
+            return True
+    return False
+
+
 class GetKernelObjectStextAdress(gdb.Command):
     cmd = 'get-kernel-object-stext-address'
 
@@ -295,11 +302,11 @@ detach_kernel_cmd = DetachKernel()
 class Module:
     def __init__(self):
         self.name = ""
-        self.text = None
-        self.data = None
-        self.bss = None
-        self.symtab = None
-        self.address = None
+        self.text = 0
+        self.data = 0
+        self.bss = 0
+        self.symtab = 0
+        self.address = 0
 
 
 def get_pure_string_from_gdb_ptr(char_ptr) -> str:
@@ -315,7 +322,13 @@ def fill_sections(module: Module, raw_module):
         nsection = int(module_attrs['nsections'].cast(uint_type))
         for offset in range(nsection):
             section = (module_attrs["attrs"].cast(module_sect_attr_pointer_type) + offset).dereference()
-            name = get_pure_string_from_gdb_ptr(section['name'].cast(char_pointer_type))
+
+            name = ""
+            if value_has_field(section, "name"):
+                name = get_pure_string_from_gdb_ptr(section['name'].cast(char_pointer_type))
+            elif value_has_field(section, "battr"):
+                name = get_pure_string_from_gdb_ptr(section['battr']["attr"]["name"].cast(char_pointer_type))
+
             address = section['address'].cast(uintptr_type)
             if name == '.text':
                 module.text = hex(int(address))
@@ -325,6 +338,7 @@ def fill_sections(module: Module, raw_module):
                 module.data = hex(int(address))
             elif name == '.symtab':
                 module.symtab = hex(int(address))
+
     except Exception as e:
         error(str(e))
 
@@ -346,6 +360,14 @@ def get_all_modules():
     def get_module(entry_ptr):
         return (entry_ptr.cast(uintptr_pointer_type) - 1).cast(module_pointer_type).dereference()
 
+    def get_module_text(m):
+        if value_has_field(m, 'module_core'):
+            return m['module_core'].cast(uintptr_pointer_type)
+        elif value_has_field(m, 'core_layout'):
+            return m['core_layout']['base'].cast(uintptr_pointer_type)
+        else:
+            raise Exception("Unsupported kernel version")
+
     modules_head_ptr = first_entry(modules_entry[0].value())
     list_entry_ptr = next_entry(modules_head_ptr)
 
@@ -354,7 +376,7 @@ def get_all_modules():
     raw_module = get_module(modules_head_ptr)
 
     module.name = get_pure_string_from_gdb_ptr(raw_module['name'].cast(char_pointer_type))
-    module.text = raw_module['module_core'].cast(uintptr_pointer_type)
+    module.text = get_module_text(raw_module)
     module.address = get_module_ptr(modules_head_ptr)
     fill_sections(module, raw_module)
     all_modules.append(module)
@@ -364,7 +386,7 @@ def get_all_modules():
 
         raw_module = get_module(list_entry_ptr)
         module.name = get_pure_string_from_gdb_ptr(raw_module['name'].cast(char_pointer_type))
-        module.text = raw_module['module_core'].cast(uintptr_pointer_type)
+        module.text = get_module_text(raw_module)
         module.address = get_module_ptr(list_entry_ptr)
         fill_sections(module, raw_module)
         all_modules.append(module)
@@ -422,7 +444,12 @@ class GetKernelModule(gdb.Command):
             return
 
         module_name = argv[0]
-        found_module = find_module(module_name)
+
+        try:
+            found_module = find_module(module_name)
+        except Exception as e:
+            error(f"{e}")
+            return
 
         if found_module is None:
             error(f"No such module found {module_name}")
