@@ -120,7 +120,7 @@ _vkdbg_bundle_create() {
             package_type="deb"
         elif [[ -n $pkgs_dir ]]; then
             packages_dir=$pkgs_dir
-            package_type="zst|lz4"
+            package_type="zst\|lz4"
         fi
     fi
 
