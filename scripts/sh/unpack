@@ -165,7 +165,7 @@ _unpack_debug_pkg() {
 
     target_directory=$1
     mkdir -p "$target_directory/root"
-    log_info "Copying debs"
+    log_info "Copying packages"
     cp "$target_directory/$_VKDBG_DEBUG_DEB_DIR"/* "$target_directory/root"
     (
         cd "$target_directory/root" || exit 1
