@@ -154,7 +154,9 @@ _unpack_debug_pkg() {
     local dep_err=false
 
     check_vkdbg_additional_deps tar
-    dep_err=$(($? | $dep_err))
+    dep_err=$(($? | "$dep_err"))
+    check_vkdbg_additional_deps lz4
+    dep_err=$(($? | "$dep_err"))
 
     if [[ $dep_err -eq 1 ]]; then
         log_error "Error unpacking pkg. Not all dependencies satisfied"
@@ -169,11 +171,17 @@ _unpack_debug_pkg() {
         cd "$target_directory/root" || exit 1
         ar_executable=$(which ar)
         tar_executable=$(which tar)
+        lz4_executable=$(which lz4)
 
         log_info "Installing debug sources and packages"
         for filename in "$target_machine_dir"/root/*.zst; do
             log_info "Processing $filename"
             $tar_executable -I zstd -xvf "$filename"
+        done
+
+        for filename in "$target_machine_dir"/root/*.lz4; do
+            log_info "Processing $filename"
+            $lz4_executable -dc --no-sparse "$filename" | $tar_executable -xvf -
         done
 
         rm "$target_machine_dir"/root/*.zst

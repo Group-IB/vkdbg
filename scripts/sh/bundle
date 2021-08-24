@@ -120,7 +120,7 @@ _vkdbg_bundle_create() {
             package_type="deb"
         elif [[ -n $pkgs_dir ]]; then
             packages_dir=$pkgs_dir
-            package_type="pkg"
+            package_type="zst\|lz4"
         fi
     fi
 
@@ -182,9 +182,7 @@ _vkdbg_bundle_create() {
     log_info "Creating bundle..."
     cd ".$_VKDBG_NAME/$bundle_name/" || exit 1
     tar -czvf ../"$bundle_name.tar.gz" .
-    
 
-    cd -
     mv ".$_VKDBG_NAME/$bundle_name.tar.gz" .
     #rm -rf ".$_VKDBG_NAME/"
 }
