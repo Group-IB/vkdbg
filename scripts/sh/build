@@ -9,6 +9,7 @@ _vkdbg_build_remote_help() {
     log_continue "    --user    | -u - Set remote user"
     log_continue "    --verbose | -v - Show verbose log"
     log_continue "    --install | -i - Install sources to vm env"
+    log_continue "    --debug   | -d - Set debug flags for build, variable will be set i \$VKDBG_CFLAGS"
     log_continue "    -- [args]      - Pass build args to script"
     exit 0
 }
@@ -23,6 +24,7 @@ _vkdbg_build_remote() {
     local remote_source_dir="/usr/local/src/"
     local verbose=false
     local install=false
+    local build_debug=false
 
     build_file="$(pwd)/.vkbuild"
 
@@ -33,6 +35,9 @@ _vkdbg_build_remote() {
                 ;;
             --verbose | -v)
                 verbose=true
+                ;;
+            --debug | -d)
+                build_debug=true
                 ;;
             --install | -i)
                 install=true
@@ -79,6 +84,7 @@ _vkdbg_build_remote() {
 
     assert_empty "$addr" "Please, specify machine address"
 
+    VKDBG_CFLAGS="-DVKDBG_BUILD"
     source "$build_file"
     vkdbg_env
 
@@ -86,7 +92,12 @@ _vkdbg_build_remote() {
         VKDBG_ARTIFACTS_DIR=$remote_source_dir
     fi
 
+    if [ $build_debug = true ]; then
+        VKDBG_CFLAGS="$VKDBG_CFLAGS -DDEBUG -g3 -ggdb"
+    fi
+
     log_info "Artifacts dir: $VKDBG_ARTIFACTS_DIR"
+    log_info "VKDBG_CFLAGS: $VKDBG_CFLAGS"
 
     local local_source_root_dir
     local remote_build_dir_name
@@ -155,6 +166,7 @@ _vkdbg_build_cmd_help() {
     log_continue "  Any build file should contains several field with build information:"
     log_continue "    * vkdbg_env - function contains exporting local variables to help VKDBG:"
     log_continue "      - VKDBG_ARTIFACTS_DIR - artifact which will be downloaded"
+    log_continue "      - VKDBG_BUILD_DEBUG - artifact which will be downloaded"
     log_continue "    * vkdbg_build - function which will be called after sources will be uploaded to vm. Should "
     log_continue "      provide sequence of build commands"
     log_continue "  Available commands:"
