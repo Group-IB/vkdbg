@@ -14,6 +14,10 @@ _vkdbg_build_remote_help() {
     exit 0
 }
 
+_term_build() {
+    exit 0
+}
+
 _vkdbg_build_remote() {
     local target_machine
     local target_machine_dir
@@ -26,6 +30,7 @@ _vkdbg_build_remote() {
     local install=false
     local build_debug=false
 
+    trap "_term_build" EXIT SIGTERM
     build_file="$(pwd)/.vkbuild"
 
     while (("$#")); do
@@ -112,17 +117,13 @@ _vkdbg_build_remote() {
     local build_cmd
     local pull_artifacts_cmd
 
-    if [ ! -d remote_artifacts ]; then
-        mkdir remote_artifacts
-    else
-        rm -rf remote_artifacts
-        mkdir remote_artifacts
-    fi
-
     copy_id_cmd="ssh-copy-id $user@$addr"
-    copy_src_cmd="scp -r $local_source_root_dir $user@$addr:$remote_source_dir"
-    build_cmd="ssh $user@$addr (cd $remote_source_dir/$remote_build_dir_name; source $build_file_name; vkdbg_build $build_args)"
+    copy_src_cmd="scp -r $local_source_root_dir $user@$addr:$remote_source_dir;"
+    build_cmd="ssh $user@$addr (cd $remote_source_dir/$remote_build_dir_name; source $build_file_name; vkdbg_build $build_args); echo \$? >| /tmp/.vkdbg_$user\_err"
     pull_artifacts_cmd="scp -r $user@$addr:$remote_source_dir/$remote_build_dir_name/$VKDBG_ARTIFACTS_DIR remote_artifacts/"
+
+    get_last_err="ssh $user@$addr cat /tmp/.vkdbg_$user\_err"
+    clear_last_err="ssh $user@$addr echo 0 > /tmp/.vkdbg_$user\_err"
 
     log_info "Connecting..."
     if $verbose; then
@@ -130,15 +131,42 @@ _vkdbg_build_remote() {
     else
         $copy_id_cmd &>/dev/null
     fi
+    error=$?
+    if [ $error != 0 ]; then
+        log_info "Error: $error"
+        exit $error
+    fi
+
+    $clear_last_err
     log_info "Pushing sources..."
     if $verbose; then
         $copy_src_cmd
     else
         $copy_src_cmd &>/dev/null
     fi
+    error=$?
+    if [ $error != 0 ]; then
+        log_info "Error: $error"
+        exit $error
+    fi
+
     log_info "Building..."
     $build_cmd
+    ssh_err=$($get_last_err)
+    if [ "$ssh_err" != 0 ]; then
+        log_info "Remote error: $ssh_err"
+        exit "$ssh_err"
+    fi
+
     log_info "Pulling artifacts..."
+
+    if [ ! -d remote_artifacts ]; then
+        mkdir remote_artifacts
+    else
+        rm -rf remote_artifacts
+        mkdir remote_artifacts
+    fi
+
     if $verbose; then
         $pull_artifacts_cmd
     else
