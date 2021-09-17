@@ -351,7 +351,7 @@ _vkdbg_vm_stop() {
     assert_empty "$target_machine" "Please, specify machine name"
 
     target_machine_dir="$(get_vkdbg_vm_directory "$target_machine")"
-    log_info "Starting machine: $target_machine"
+    log_info "Stopping machine: $target_machine"
 
     if [[ $verbose == true ]]; then
         log_info "Machine dir: $target_machine_dir"

@@ -29,6 +29,7 @@ _vkdbg_bundle_create_help() {
     log_continue "    --image   | -i - qcow2 image for qemu"
     log_continue "    --rpms    | -r - directory contains rpm packages with kernel debug info"
     log_continue "    --debs    | -d - directory contains apk packages with kernel debug info"
+    log_continue "    --pkgs    | -p - directory contains apk packages with kernel debug info"
     log_continue "    --name    | -n - set bundle name"
     log_continue "    --meta    | -m - metadata field (in key=value format)"
     log_continue "    --config  | -c - path to virt-manager XML configuration file for VM"
@@ -175,7 +176,7 @@ _vkdbg_bundle_create() {
     fi
 
     if [[ -n $config_file ]]; then
-        cp $config_file ".$_VKDBG_NAME/$bundle_name/meta/config.xml"
+        cp "$config_file" ".$_VKDBG_NAME/$bundle_name/meta/config.xml"
     fi
 
     
