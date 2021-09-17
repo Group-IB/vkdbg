@@ -180,11 +180,14 @@ _vkdbg_bundle_create() {
 
     
     log_info "Creating bundle..."
-    cd ".$_VKDBG_NAME/$bundle_name/" || exit 1
-    tar -czvf ../"$bundle_name.tar.gz" .
+    (
+        cd ".$_VKDBG_NAME/$bundle_name/" || exit 1
+        tar -czvf ../"$bundle_name.tar.gz" .
+    )
 
-    mv ".$_VKDBG_NAME/$bundle_name.tar.gz" .
-    #rm -rf ".$_VKDBG_NAME/"
+    (
+        mv "$(pwd)/.$_VKDBG_NAME/$bundle_name.tar.gz" . && rm -rf ".$_VKDBG_NAME/"
+    )
 }
 
 vkdbg_bundle_cmd() {
