@@ -77,8 +77,8 @@ _bootstrap() {
     privileged=$(check_privileges)
 
     if [ ! -L $link_file ]; then
-        $privileged ln -s "${BASH_SOURCE[0]}" /usr/local/bin/vkdbg
-        log_info "${BASH_SOURCE[0]} -> /usr/local/bin/vkdbg"
+	$privileged ln -s "$(pwd)/${BASH_SOURCE[0]}" /usr/local/bin/vkdbg
+	log_info "$(pwd)/${BASH_SOURCE[0]} -> /usr/local/bin/vkdbg"
     fi
 
     log_info "Done"
