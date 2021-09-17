@@ -27,18 +27,18 @@ log_continue() {
 log_and_read() {
     local msg=$1
     local out
-    read -r -p "[>] $_VKDBG_PREFIX $msg" out
+    read -r -p "[>] $(date +%T) $_VKDBG_PREFIX $msg" out
     echo "$out"
 }
 
 log_info() {
-    echo "[+] $_VKDBG_PREFIX $1"
+    echo "[+] $(date +%T) $_VKDBG_PREFIX $1"
 }
 
 log_warning() {
-    echo "[!] $_VKDBG_PREFIX $1"
+    echo "[!] $(date +%T) $_VKDBG_PREFIX $1"
 }
 
 log_error() {
-    echo "[-] $_VKDBG_PREFIX $1"
+    echo "[-] $(date +%T) $_VKDBG_PREFIX $1"
 }

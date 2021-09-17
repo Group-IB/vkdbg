@@ -9,7 +9,12 @@ _vkdbg_build_remote_help() {
     log_continue "    --user    | -u - Set remote user"
     log_continue "    --verbose | -v - Show verbose log"
     log_continue "    --install | -i - Install sources to vm env"
+    log_continue "    --debug   | -d - Set debug flags for build, variable will be set i \$VKDBG_CFLAGS"
     log_continue "    -- [args]      - Pass build args to script"
+    exit 0
+}
+
+_term_build() {
     exit 0
 }
 
@@ -23,7 +28,9 @@ _vkdbg_build_remote() {
     local remote_source_dir="/usr/local/src/"
     local verbose=false
     local install=false
+    local build_debug=false
 
+    trap "_term_build" EXIT SIGTERM
     build_file="$(pwd)/.vkbuild"
 
     while (("$#")); do
@@ -33,6 +40,9 @@ _vkdbg_build_remote() {
                 ;;
             --verbose | -v)
                 verbose=true
+                ;;
+            --debug | -d)
+                build_debug=true
                 ;;
             --install | -i)
                 install=true
@@ -79,6 +89,7 @@ _vkdbg_build_remote() {
 
     assert_empty "$addr" "Please, specify machine address"
 
+    VKDBG_CFLAGS="-DVKDBG_BUILD"
     source "$build_file"
     vkdbg_env
 
@@ -86,7 +97,12 @@ _vkdbg_build_remote() {
         VKDBG_ARTIFACTS_DIR=$remote_source_dir
     fi
 
+    if [ $build_debug = true ]; then
+        VKDBG_CFLAGS="$VKDBG_CFLAGS -DDEBUG -g3 -ggdb"
+    fi
+
     log_info "Artifacts dir: $VKDBG_ARTIFACTS_DIR"
+    log_info "VKDBG_CFLAGS: $VKDBG_CFLAGS"
 
     local local_source_root_dir
     local remote_build_dir_name
@@ -101,17 +117,13 @@ _vkdbg_build_remote() {
     local build_cmd
     local pull_artifacts_cmd
 
-    if [ ! -d remote_artifacts ]; then
-        mkdir remote_artifacts
-    else
-        rm -rf remote_artifacts
-        mkdir remote_artifacts
-    fi
-
     copy_id_cmd="ssh-copy-id $user@$addr"
-    copy_src_cmd="scp -r $local_source_root_dir $user@$addr:$remote_source_dir"
-    build_cmd="ssh $user@$addr (cd $remote_source_dir/$remote_build_dir_name; source $build_file_name; vkdbg_build $build_args)"
+    copy_src_cmd="scp -r $local_source_root_dir $user@$addr:$remote_source_dir;"
+    build_cmd="ssh $user@$addr (cd $remote_source_dir/$remote_build_dir_name; source $build_file_name; vkdbg_build $build_args); echo \$? >| /tmp/.vkdbg_$user\_err"
     pull_artifacts_cmd="scp -r $user@$addr:$remote_source_dir/$remote_build_dir_name/$VKDBG_ARTIFACTS_DIR remote_artifacts/"
+
+    get_last_err="ssh $user@$addr cat /tmp/.vkdbg_$user\_err"
+    clear_last_err="ssh $user@$addr echo 0 > /tmp/.vkdbg_$user\_err"
 
     log_info "Connecting..."
     if $verbose; then
@@ -119,15 +131,42 @@ _vkdbg_build_remote() {
     else
         $copy_id_cmd &>/dev/null
     fi
+    error=$?
+    if [ $error != 0 ]; then
+        log_info "Error: $error"
+        exit $error
+    fi
+
+    $clear_last_err
     log_info "Pushing sources..."
     if $verbose; then
         $copy_src_cmd
     else
         $copy_src_cmd &>/dev/null
     fi
+    error=$?
+    if [ $error != 0 ]; then
+        log_info "Error: $error"
+        exit $error
+    fi
+
     log_info "Building..."
     $build_cmd
+    ssh_err=$($get_last_err)
+    if [ "$ssh_err" != 0 ]; then
+        log_info "Remote error: $ssh_err"
+        exit "$ssh_err"
+    fi
+
     log_info "Pulling artifacts..."
+
+    if [ ! -d remote_artifacts ]; then
+        mkdir remote_artifacts
+    else
+        rm -rf remote_artifacts
+        mkdir remote_artifacts
+    fi
+
     if $verbose; then
         $pull_artifacts_cmd
     else
@@ -155,6 +194,7 @@ _vkdbg_build_cmd_help() {
     log_continue "  Any build file should contains several field with build information:"
     log_continue "    * vkdbg_env - function contains exporting local variables to help VKDBG:"
     log_continue "      - VKDBG_ARTIFACTS_DIR - artifact which will be downloaded"
+    log_continue "      - VKDBG_BUILD_DEBUG - artifact which will be downloaded"
     log_continue "    * vkdbg_build - function which will be called after sources will be uploaded to vm. Should "
     log_continue "      provide sequence of build commands"
     log_continue "  Available commands:"
