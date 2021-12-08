@@ -118,7 +118,7 @@ _vkdbg_build_remote() {
     local pull_artifacts_cmd
 
     copy_id_cmd="ssh-copy-id $user@$addr"
-    copy_src_cmd="scp -r $local_source_root_dir $user@$addr:$remote_source_dir;"
+    copy_src_cmd="scp -r $local_source_root_dir $user@$addr:$remote_source_dir"
     build_cmd="ssh $user@$addr (cd $remote_source_dir/$remote_build_dir_name; source $build_file_name; vkdbg_build $build_args); echo \$? >| /tmp/.vkdbg_$user\_err"
     pull_artifacts_cmd="scp -r $user@$addr:$remote_source_dir/$remote_build_dir_name/$VKDBG_ARTIFACTS_DIR remote_artifacts/"
 

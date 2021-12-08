@@ -143,10 +143,12 @@ def get_assumed_module_object(module_name: str):
         return None
 
     for obj_file in os.listdir(module_objects_dir):
-        if obj_file.endswith(".ko") and module_name in obj_file:
+        if obj_file.endswith(".ko") and (module_name in obj_file
+                                         or module_name.replace('-', "_") in obj_file
+                                         or module_name.replace('_', "-") in obj_file):
             return os.path.join(module_objects_dir, obj_file)
 
-    return None
+    raise LookupError("Could find assumed module")
 
 
 def get_object_stext_address(kernel_image):
@@ -509,6 +511,7 @@ class AttachKernelModule(gdb.Command):
 
         src_dir = os.getcwd()
         module_name = ""
+        module_object = None
 
         if len(argv) > 0:
             if [argv[0]] == 'help':
@@ -518,17 +521,27 @@ class AttachKernelModule(gdb.Command):
 
         if len(argv) > 1 and argv[1]:
             if os.path.isabs(argv[1]):
+                message(f"Loading module symbols from {argv[1]}")
                 module_object = argv[1]
             else:
-                module_name = get_assumed_module_object(argv[1])
+                try:
+                    module_name = get_assumed_module_object(argv[1])
+                except Exception as e:
+                    error(str(e))
+                    return
         else:
             message(f"Object for module {module_name} wasn't set explicitly, trying to assume...")
-            module_object = get_assumed_module_object(module_name)
-            if module_object is None:
-                error("Cant find module object. You can use flag -m | --with-module to set up module debugging")
-                error("Even if you'll attach module at kernel space that doesn't not mean it have debug symbols")
-            else:
-                module_object = module_object.replace('//', '/')
+            try:
+                module_object = get_assumed_module_object(module_name)
+            except Exception as e:
+                error(str(e))
+                return
+
+        if module_object is None:
+            error("Cant find module object. You can use flag -m | --with-module to set up module debugging")
+            error("Even if you'll attach module at kernel space that doesn't not mean it have debug symbols")
+        else:
+            module_object = module_object.replace('//', '/')
 
         if len(argv) > 2:
             src_dir = argv[2]
@@ -571,9 +584,60 @@ class DetachKernelModules(gdb.Command):
         attached_module_objects.clear()
 
 
+class PrintAssumedKernelModuleObjects(gdb.Command):
+    cmd = 'print-assumed-module-object'
+    global attached_module_objects
+
+    def __init__(self):
+        super(PrintAssumedKernelModuleObjects, self).__init__(self.cmd, gdb.COMMAND_USER)
+
+    def invoke(self, arg, from_tty):
+        argv = gdb.string_to_argv(arg)
+
+        if (len(argv) < 2):
+            message(f"Usage: {self.cmd} <module>")
+            return
+
+        o = None
+
+        try:
+            o = get_assumed_module_object(argv[1])
+        except Exception as e:
+            error(str(e))
+            return
+
+        message(f"Assumed: {o}")
+
+
+class PrintAvailableKernelModuleObjects(gdb.Command):
+    cmd = 'print-available-module-object'
+    global attached_module_objects
+
+    def __init__(self):
+        super(PrintAvailableKernelModuleObjects, self).__init__(self.cmd, gdb.COMMAND_USER)
+
+    def invoke(self, arg, from_tty):
+        argv = gdb.string_to_argv(arg)
+
+        module_objects_dir = get_module_objects_dir()
+        if module_objects_dir is None:
+            return None
+
+        objs = []
+
+        for obj_file in os.listdir(module_objects_dir):
+            if obj_file.endswith(".ko"):
+                objs.append(os.path.join(module_objects_dir, obj_file))
+
+        message(f"Available: {objs}")
+
+
 load_module_cmd = LoadKernelModule()
 attach_module_cmd = AttachKernelModule()
 detach_kernel_modules_cmd = DetachKernelModules()
+
+print_assumed_kernel_objects = PrintAssumedKernelModuleObjects()
+print_available_kernel_objects = PrintAvailableKernelModuleObjects()
 
 
 def welcome():
@@ -587,6 +651,9 @@ def welcome():
             f'information)')
     message(f'  {list_kernel_modules_cmd.cmd} - list all kernel modules')
     message(f'  {get_kernel_module_cmd.cmd} - get all info about kernel module')
+    message(f'  {get_kernel_module_cmd.cmd} - get all info about kernel module')
+    message(f'  {print_assumed_kernel_objects.cmd} - print assumed kernel objects')
+    message(f'  {print_available_kernel_objects.cmd} - print available kernel objects')
     message(f'  {get_kernel_base_address_cmd.cmd}')
     message(f'  {get_kernel_object_stext_address_cmd.cmd}')
     message(f'You cat type help to any command to get know how to use it.')
